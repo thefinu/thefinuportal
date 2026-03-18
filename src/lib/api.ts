@@ -1,11 +1,6 @@
 import axios from 'axios';
 
-// Use relative /api in production, fallback to localhost only in development
-const isDevelopment = process.env.NODE_ENV === 'development';
-
-const baseURL = isDevelopment
-    ? 'http://localhost:5000/api'
-    : '/api';  // Critical: relative path → uses current domain
+const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 // Remove trailing slash if any
 const cleanBaseURL = baseURL.replace(/\/$/, '');
