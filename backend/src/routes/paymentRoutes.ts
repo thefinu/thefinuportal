@@ -53,6 +53,9 @@ router.post('/create-checkout-session', gasAuth, async (req: GasAuthRequest, res
         const session = await stripe.checkout.sessions.create({
             mode: 'subscription',
             customer_email: userEmail,
+            subscription_data: {
+                trial_period_days: 14,
+            },
             success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}&spreadsheet_id=${encodeURIComponent(spreadsheetId || '')}`,
             cancel_url: `${baseUrl}/cancel?spreadsheet_id=${encodeURIComponent(spreadsheetId || '')}`,
             line_items: [
@@ -141,6 +144,10 @@ router.post('/verify-session', async (req, res) => {
             ? (subscriptionData as any).status
             : session.payment_status;
 
+        const trialEnd = (typeof subscriptionData === 'object' && subscriptionData !== null && (subscriptionData as any).trial_end)
+            ? new Date((subscriptionData as any).trial_end * 1000)
+            : null;
+
         let subscription = await Subscription.findOne({ stripeSubscriptionId: stripeSubId });
 
         if (!subscription) {
@@ -153,7 +160,8 @@ router.post('/verify-session', async (req, res) => {
                 currency: currency,
                 status: status,
                 currentPeriodEnd: currentPeriodEnd,
-                paymentEmail: customerEmail
+                paymentEmail: customerEmail,
+                trialEnd: trialEnd,
             });
         } else {
             subscription.status = status;
@@ -165,6 +173,7 @@ router.post('/verify-session', async (req, res) => {
 
         // Update user with subscription period info
         user.currentPeriodEnd = currentPeriodEnd;
+        user.trialEnd = trialEnd;
         await user.save();
 
         res.json({
@@ -362,14 +371,76 @@ async function handleSubscriptionUpdated(stripeSubscription: Stripe.Subscription
     sub.cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
     sub.status = stripeSubscription.status;
     sub.currentPeriodEnd = new Date((stripeSubscription as any).current_period_end * 1000);
+    sub.trialEnd = (stripeSubscription as any).trial_end
+        ? new Date((stripeSubscription as any).trial_end * 1000)
+        : null;
     await sub.save();
 
     // Sync to user
     await User.findByIdAndUpdate(sub.userId, {
         currentPeriodEnd: sub.currentPeriodEnd,
         cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+        trialEnd: sub.trialEnd,
     });
 }
+
+/**
+ * @route   POST /api/payment/extend-trial
+ * @desc    Extend trial period for a subscription (Admin)
+ *          Can be used to give free days/months by setting a future trial_end on Stripe
+ */
+router.post('/extend-trial', async (req, res) => {
+    try {
+        const { subscriptionId, days } = req.body;
+
+        if (!subscriptionId) {
+            return res.status(400).json({ message: 'subscriptionId is required' });
+        }
+        if (!days || days < 1) {
+            return res.status(400).json({ message: 'days must be a positive number' });
+        }
+
+        const sub = await Subscription.findOne({ stripeSubscriptionId: subscriptionId });
+        if (!sub) {
+            return res.status(404).json({ message: 'Subscription not found' });
+        }
+
+        const stripe = await getStripe();
+
+        // Calculate new trial_end: from now + days, or from existing trial_end + days
+        const now = Math.floor(Date.now() / 1000);
+        const existingTrialEnd = sub.trialEnd ? Math.floor(sub.trialEnd.getTime() / 1000) : 0;
+        const baseTimestamp = existingTrialEnd > now ? existingTrialEnd : now;
+        const newTrialEnd = baseTimestamp + (days * 24 * 60 * 60);
+
+        // Update subscription on Stripe — this extends the trial and delays billing
+        await stripe.subscriptions.update(subscriptionId, {
+            trial_end: newTrialEnd,
+            proration_behavior: 'none',
+        });
+
+        // Update local records
+        const trialEndDate = new Date(newTrialEnd * 1000);
+        sub.trialEnd = trialEndDate;
+        sub.status = 'trialing';
+        await sub.save();
+
+        await User.findByIdAndUpdate(sub.userId, {
+            trialEnd: trialEndDate,
+            isSubscribed: true,
+        });
+
+        res.json({
+            status: 'success',
+            message: `Trial extended by ${days} days`,
+            trialEnd: trialEndDate.toISOString(),
+            subscriptionId,
+        });
+    } catch (err: any) {
+        console.error('Extend trial error:', err);
+        res.status(500).json({ message: err.message || 'Failed to extend trial' });
+    }
+});
 
 /**
  * @route   GET /api/payment/subscriptions
