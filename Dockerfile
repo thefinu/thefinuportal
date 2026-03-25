@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-ENV NEXT_PUBLIC_API_URL=https://thefinuportal-backend-obal6ui5sa-uc.a.run.app/api
+ENV NEXT_PUBLIC_API_URL=https://thefinuportal-backend-1014598876589.europe-west1.run.app/api
 
 COPY . .
 RUN npm run build
