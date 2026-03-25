@@ -49,7 +49,7 @@ export default function ContactPage() {
 
     const formsRef = useReveal();
     const infoRef = useReveal();
-    const [activeTab, setActiveTab] = useState<"feature" | "contact">("feature");
+    const [activeTab, setActiveTab] = useState<"feature" | "contact">("contact");
 
     // ── Feature Request Form State ──
     const [featureForm, setFeatureForm] = useState({

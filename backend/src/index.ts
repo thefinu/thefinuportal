@@ -11,6 +11,7 @@ import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
+import contactRoutes from './routes/contactRoutes.js';
 
 console.log('Starting server...');
 dotenv.config();
@@ -39,6 +40,7 @@ apiRouter.use('/auth', authRoutes);
 apiRouter.use('/users', userRoutes);
 apiRouter.use('/payment', paymentRoutes);
 apiRouter.use('/dashboard', dashboardRoutes);
+apiRouter.use('/contact', contactRoutes);
 
 app.use('/api', apiRouter);
 app.use('/', apiRouter);
