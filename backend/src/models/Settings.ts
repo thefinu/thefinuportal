@@ -13,6 +13,11 @@ export interface ISettings extends Document {
     stripePaymentMode: 'sandbox' | 'production';
     stripeWebhookSecret: string;
     plaidWebhookUrl: string;
+    smtpHost: string;
+    smtpPort: number;
+    smtpUser: string;
+    smtpPass: string;
+    contactEmail: string;
 }
 
 const SettingsSchema: Schema = new Schema({
@@ -28,6 +33,11 @@ const SettingsSchema: Schema = new Schema({
     stripeSecretKey: { type: String, default: '' },
     stripePaymentMode: { type: String, enum: ['sandbox', 'production'], default: 'sandbox' },
     stripeWebhookSecret: { type: String, default: '' },
+    smtpHost: { type: String, default: 'smtp.gmail.com' },
+    smtpPort: { type: Number, default: 587 },
+    smtpUser: { type: String, default: '' },
+    smtpPass: { type: String, default: '' },
+    contactEmail: { type: String, default: '' },
 }, { timestamps: true });
 
 export default mongoose.model<ISettings>('Settings', SettingsSchema);

@@ -1,19 +1,26 @@
 import { Router, type Request, type Response } from 'express';
 import nodemailer from 'nodemailer';
+import Settings from '../models/Settings.js';
 
 const router = Router();
 
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: false,
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-});
+async function getMailerConfig() {
+    const settings = await Settings.findOne();
+    const host = settings?.smtpHost || process.env.SMTP_HOST || 'smtp.gmail.com';
+    const port = settings?.smtpPort || Number(process.env.SMTP_PORT) || 587;
+    const user = settings?.smtpUser || process.env.SMTP_USER || '';
+    const pass = settings?.smtpPass || process.env.SMTP_PASS || '';
+    const contactEmail = settings?.contactEmail || process.env.CONTACT_EMAIL || 'anna@thefinu.com';
 
-const RECIPIENT = process.env.CONTACT_EMAIL || 'anna@thefinu.com';
+    const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: false,
+        auth: { user, pass },
+    });
+
+    return { transporter, user, contactEmail };
+}
 
 // POST /contact — General contact form
 router.post('/', async (req: Request, res: Response) => {
@@ -25,10 +32,11 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     try {
+        const { transporter, user, contactEmail } = await getMailerConfig();
         await transporter.sendMail({
-            from: `"${firstName} ${lastName}" <${process.env.SMTP_USER}>`,
+            from: `"${firstName} ${lastName}" <${user}>`,
             replyTo: email,
-            to: RECIPIENT,
+            to: contactEmail,
             subject: `New Contact Message from ${firstName} ${lastName}`,
             html: `
                 <h2>New Contact Form Submission</h2>
@@ -56,10 +64,11 @@ router.post('/feature-request', async (req: Request, res: Response) => {
     }
 
     try {
+        const { transporter, user, contactEmail } = await getMailerConfig();
         await transporter.sendMail({
-            from: `"${firstName}" <${process.env.SMTP_USER}>`,
+            from: `"${firstName}" <${user}>`,
             replyTo: email,
-            to: RECIPIENT,
+            to: contactEmail,
             subject: `Feature Request: ${feature} — from ${firstName}`,
             html: `
                 <h2>New Feature Request</h2>
