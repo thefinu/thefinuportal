@@ -6,7 +6,7 @@ import {
     LayoutDashboard,
     Wallet,
     Settings,
-    CircleDollarSign,
+    Users,
     LogOut,
     CreditCard
 } from "lucide-react";
@@ -19,6 +19,7 @@ function cn(...inputs: ClassValue[]) {
 
 const menuItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { name: "Users", href: "/users", icon: Users },
     { name: "Accounts", href: "/accounts", icon: Wallet },
     { name: "Subscriptions", href: "/subscriptions", icon: CreditCard },
     { name: "Settings", href: "/settings", icon: Settings },
