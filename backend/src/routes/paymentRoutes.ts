@@ -48,7 +48,7 @@ router.post('/create-checkout-session', gasAuth, async (req: GasAuthRequest, res
         }
         const priceId = prices.data[0]!.id;
 
-        const baseUrl = process.env.APP_BASE_URL || 'https://thefinu.stallioni.com';
+        const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
 
         const session = await stripe.checkout.sessions.create({
             mode: 'subscription',
