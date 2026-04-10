@@ -70,6 +70,7 @@ router.post('/validate-user', gasAuth, async (req, res) => {
                 userId: user._id,
                 email: user.email,
                 isSubscribed: user.isSubscribed,
+                isFreeUser: user.isFreeUser,
                 currentPeriodEnd: user.currentPeriodEnd,
                 cancelAtPeriodEnd: user.cancelAtPeriodEnd,
                 userCreated,
@@ -92,6 +93,82 @@ router.get('/', async (req, res) => {
         res.json(users);
     } catch (err: any) {
         res.status(500).json({ message: err.message });
+    }
+});
+
+/**
+ * @route   POST /api/users/:id/set-free-user
+ * @desc    Cancel Stripe subscription and set user as a permanent free user
+ */
+router.post('/:id/set-free-user', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        if (user.isFreeUser) {
+            return res.status(400).json({ message: 'User is already a free user' });
+        }
+
+        // Cancel all Stripe subscriptions for this user
+        const subscriptions = await Subscription.find({ userId: user._id });
+        if (subscriptions.length > 0) {
+            try {
+                const settings = await Settings.findOne();
+                if (settings?.stripeSecretKey) {
+                    const stripe = new Stripe(settings.stripeSecretKey, {
+                        apiVersion: '2024-12-18.acacia' as any,
+                    });
+
+                    for (const sub of subscriptions) {
+                        try {
+                            await stripe.subscriptions.cancel(sub.stripeSubscriptionId);
+                        } catch (stripeErr: any) {
+                            if (stripeErr.code !== 'resource_missing') {
+                                console.error(`Failed to cancel Stripe sub ${sub.stripeSubscriptionId}:`, stripeErr.message);
+                            }
+                        }
+                    }
+
+                    // Delete Stripe customer
+                    const customerId = subscriptions[0]?.stripeCustomerId;
+                    if (customerId) {
+                        try {
+                            await stripe.customers.del(customerId);
+                        } catch (stripeErr: any) {
+                            if (stripeErr.code !== 'resource_missing') {
+                                console.error(`Failed to delete Stripe customer ${customerId}:`, stripeErr.message);
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Stripe cleanup error during set-free-user:', err);
+            }
+        }
+
+        // Delete subscription records from DB
+        await Subscription.deleteMany({ userId: user._id });
+
+        // Set user as free user with permanent access
+        user.isFreeUser = true;
+        user.isSubscribed = true;
+        user.currentPeriodEnd = null;
+        user.cancelAtPeriodEnd = false;
+        user.trialEnd = null;
+        await user.save();
+
+        // Update all accounts to subscribed
+        await Account.updateMany({ user_id: user._id }, { isSubscribed: true });
+
+        res.json({
+            status: 'success',
+            message: `User ${user.email} has been set as a free user`,
+        });
+    } catch (err: any) {
+        console.error('Set free user error:', err);
+        res.status(500).json({ message: err.message || 'Failed to set free user' });
     }
 });
 

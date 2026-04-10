@@ -9,6 +9,7 @@ import {
     Trash2,
     X,
     AlertTriangle,
+    ShieldCheck,
 } from "lucide-react";
 import api from "@/lib/api";
 
@@ -16,6 +17,7 @@ interface User {
     _id: string;
     email: string;
     isSubscribed: boolean;
+    isFreeUser: boolean;
     currentPeriodEnd: string | null;
     cancelAtPeriodEnd: boolean;
     trialEnd: string | null;
@@ -29,6 +31,9 @@ export default function UsersPage() {
     const [deleteModal, setDeleteModal] = useState<User | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [deleteMessage, setDeleteMessage] = useState({ type: "", content: "" });
+    const [freeUserModal, setFreeUserModal] = useState<User | null>(null);
+    const [settingFreeUser, setSettingFreeUser] = useState(false);
+    const [freeUserMessage, setFreeUserMessage] = useState({ type: "", content: "" });
 
     const fetchUsers = async () => {
         try {
@@ -64,6 +69,28 @@ export default function UsersPage() {
             });
         } finally {
             setDeleting(false);
+        }
+    };
+
+    const handleSetFreeUser = async () => {
+        if (!freeUserModal) return;
+        setSettingFreeUser(true);
+        setFreeUserMessage({ type: "", content: "" });
+        try {
+            const res = await api.post(`/users/${freeUserModal._id}/set-free-user`);
+            setFreeUserMessage({ type: "success", content: res.data.message });
+            await fetchUsers();
+            setTimeout(() => {
+                setFreeUserModal(null);
+                setFreeUserMessage({ type: "", content: "" });
+            }, 1500);
+        } catch (err: any) {
+            setFreeUserMessage({
+                type: "error",
+                content: err.response?.data?.message || "Failed to set free user",
+            });
+        } finally {
+            setSettingFreeUser(false);
         }
     };
 
@@ -136,7 +163,11 @@ export default function UsersPage() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            {user.cancelAtPeriodEnd ? (
+                                            {user.isFreeUser ? (
+                                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">
+                                                    Free User
+                                                </span>
+                                            ) : user.cancelAtPeriodEnd ? (
                                                 <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-orange-100 text-orange-800">
                                                     Canceling
                                                 </span>
@@ -146,7 +177,7 @@ export default function UsersPage() {
                                                 </span>
                                             ) : (
                                                 <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">
-                                                    Free
+                                                    Inactive
                                                 </span>
                                             )}
                                         </td>
@@ -166,17 +197,32 @@ export default function UsersPage() {
                                             {new Date(user.createdAt).toLocaleDateString()}
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <button
-                                                onClick={() => {
-                                                    setDeleteModal(user);
-                                                    setDeleteMessage({ type: "", content: "" });
-                                                }}
-                                                className="inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors"
-                                                title="Delete user and all related data"
-                                            >
-                                                <Trash2 className="mr-1 h-3.5 w-3.5" />
-                                                Delete
-                                            </button>
+                                            <div className="flex items-center justify-end gap-2">
+                                                {!user.isFreeUser && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setFreeUserModal(user);
+                                                            setFreeUserMessage({ type: "", content: "" });
+                                                        }}
+                                                        className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                                                        title="Set as free user"
+                                                    >
+                                                        <ShieldCheck className="mr-1 h-3.5 w-3.5" />
+                                                        Set Free
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => {
+                                                        setDeleteModal(user);
+                                                        setDeleteMessage({ type: "", content: "" });
+                                                    }}
+                                                    className="inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors"
+                                                    title="Delete user and all related data"
+                                                >
+                                                    <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                                    Delete
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))
@@ -237,6 +283,64 @@ export default function UsersPage() {
                                         <Loader2 className="mx-auto h-4 w-4 animate-spin" />
                                     ) : (
                                         "Delete Permanently"
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Set Free User Confirmation Modal */}
+            {freeUserModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                    <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-semibold text-slate-900">Set as Free User</h2>
+                            <button onClick={() => setFreeUserModal(null)} className="text-slate-400 hover:text-slate-600">
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-50 border border-blue-100">
+                                <ShieldCheck className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="text-sm font-medium text-blue-800">Confirm free user access</p>
+                                    <p className="text-xs text-blue-600 mt-1">
+                                        This will cancel the user&apos;s Stripe subscription and grant permanent free access. The user&apos;s data (accounts, transactions, spreadsheets) will be preserved.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <p className="text-sm text-slate-600">User</p>
+                                <p className="font-medium text-slate-900">{freeUserModal.email}</p>
+                            </div>
+
+                            {freeUserMessage.content && (
+                                <p className={`text-sm font-medium ${
+                                    freeUserMessage.type === "error" ? "text-red-600" : "text-emerald-600"
+                                }`}>
+                                    {freeUserMessage.content}
+                                </p>
+                            )}
+
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    onClick={() => setFreeUserModal(null)}
+                                    className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSetFreeUser}
+                                    disabled={settingFreeUser}
+                                    className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+                                >
+                                    {settingFreeUser ? (
+                                        <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+                                    ) : (
+                                        "Confirm Free User"
                                     )}
                                 </button>
                             </div>

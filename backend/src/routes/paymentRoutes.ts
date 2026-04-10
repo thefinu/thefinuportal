@@ -4,6 +4,8 @@ import Settings from '../models/Settings.js';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Account from '../models/Account.js';
+import Transaction from '../models/Transaction.js';
+import UserSpreadsheet from '../models/UserSpreadsheet.js';
 import { gasAuth, type GasAuthRequest } from '../middleware/gasAuthMiddleware.js';
 
 const router = express.Router();
@@ -330,7 +332,7 @@ router.post('/stripe-webhook', async (req, res) => {
 });
 
 /**
- * Handle subscription canceled — deactivate user and accounts
+ * Handle subscription canceled — delete user and all data (unless free user)
  */
 async function handleSubscriptionCanceled(stripeSubscription: Stripe.Subscription) {
     const sub = await Subscription.findOne({ stripeSubscriptionId: stripeSubscription.id });
@@ -349,16 +351,63 @@ async function handleSubscriptionCanceled(stripeSubscription: Stripe.Subscriptio
         status: { $nin: ['canceled', 'cancelled'] },
     });
 
-    if (activeSubCount === 0) {
-        // No active subscriptions left — deactivate user and accounts
-        await User.findByIdAndUpdate(sub.userId, {
-            isSubscribed: false,
-            cancelAtPeriodEnd: false,
-            currentPeriodEnd: null,
-        });
-        await Account.updateMany({ user_id: sub.userId }, { isSubscribed: false });
-        console.log(`Deactivated user ${sub.userId} and accounts after subscription ended`);
+    if (activeSubCount > 0) {
+        return; // User still has active subscriptions
     }
+
+    const user = await User.findById(sub.userId);
+    if (!user) {
+        console.log(`Webhook: User ${sub.userId} not found`);
+        return;
+    }
+
+    // Free users keep their data — only deactivate subscription fields
+    if (user.isFreeUser) {
+        console.log(`Webhook: User ${user.email} is a free user, skipping data deletion`);
+        return;
+    }
+
+    // Non-free user with no active subscriptions — delete user and all related data
+    console.log(`Webhook: Deleting user ${user.email} and all related data after subscription ended`);
+
+    // Delete Stripe customer
+    try {
+        const settings = await Settings.findOne();
+        if (settings?.stripeSecretKey) {
+            const stripe = new Stripe(settings.stripeSecretKey, {
+                apiVersion: '2024-12-18.acacia' as any,
+            });
+            const customerId = sub.stripeCustomerId;
+            if (customerId) {
+                await stripe.customers.del(customerId);
+            }
+        }
+    } catch (stripeErr: any) {
+        if (stripeErr.code !== 'resource_missing') {
+            console.error(`Failed to delete Stripe customer:`, stripeErr.message);
+        }
+    }
+
+    // Delete all subscriptions
+    await Subscription.deleteMany({ userId: user._id });
+
+    // Delete transactions for all user accounts
+    const accounts = await Account.find({ user_id: user._id });
+    const accountIds = accounts.map(a => a._id);
+    if (accountIds.length > 0) {
+        await Transaction.deleteMany({ accountId: { $in: accountIds } });
+    }
+
+    // Delete accounts
+    await Account.deleteMany({ user_id: user._id });
+
+    // Delete spreadsheet records
+    await UserSpreadsheet.deleteMany({ userId: user._id });
+
+    // Delete the user
+    await User.findByIdAndDelete(user._id);
+
+    console.log(`Webhook: Successfully deleted user ${user.email} and all related data`);
 }
 
 /**
