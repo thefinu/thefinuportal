@@ -4,9 +4,8 @@ import Settings from '../models/Settings.js';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Account from '../models/Account.js';
-import Transaction from '../models/Transaction.js';
-import UserSpreadsheet from '../models/UserSpreadsheet.js';
 import { gasAuth, type GasAuthRequest } from '../middleware/gasAuthMiddleware.js';
+import { refundSubscription } from '../utils/stripeRefund.js';
 
 const router = express.Router();
 
@@ -198,7 +197,7 @@ router.post('/verify-session', async (req, res) => {
 
 /**
  * @route   POST /api/payment/unsubscribe
- * @desc    Schedule cancellation at end of billing period (user stays active until then)
+ * @desc    Refund and immediately cancel subscription
  */
 router.post('/unsubscribe', gasAuth, async (req, res) => {
     try {
@@ -226,26 +225,28 @@ router.post('/unsubscribe', gasAuth, async (req, res) => {
         }
 
         const stripe = await getStripe();
-        const results = [];
+        const results: Array<Record<string, unknown>> = [];
 
         for (const sub of subscriptions) {
             try {
-                // Schedule cancellation at end of period instead of immediate cancel
-                await stripe.subscriptions.update(sub.stripeSubscriptionId, {
-                    cancel_at_period_end: true,
-                });
+                // Refund the latest payment
+                const refund = await refundSubscription(stripe, sub.stripeSubscriptionId);
 
-                // Mark as pending cancellation in local DB (user stays active)
-                sub.cancelAtPeriodEnd = true;
+                // Immediately cancel the subscription
+                await stripe.subscriptions.cancel(sub.stripeSubscriptionId);
+
+                // Update local DB
+                sub.status = 'canceled';
+                sub.cancelAtPeriodEnd = false;
                 await sub.save();
 
                 results.push({
                     id: sub.stripeSubscriptionId,
-                    status: 'cancel_scheduled',
-                    cancelAt: sub.currentPeriodEnd,
+                    status: 'canceled',
+                    refunded: refund ? `${refund.amount / 100} ${refund.currency}` : 'no payment to refund',
                 });
             } catch (stripeErr: any) {
-                console.error(`Error scheduling cancel for sub ${sub.stripeSubscriptionId}:`, stripeErr);
+                console.error(`Error canceling sub ${sub.stripeSubscriptionId}:`, stripeErr);
                 if (stripeErr.code === 'resource_missing' || (stripeErr.message && stripeErr.message.includes('No such subscription'))) {
                     sub.status = 'canceled';
                     sub.cancelAtPeriodEnd = false;
@@ -257,13 +258,18 @@ router.post('/unsubscribe', gasAuth, async (req, res) => {
             }
         }
 
-        // Mark user as pending cancellation but keep active
-        user.cancelAtPeriodEnd = true;
+        // Deactivate user
+        user.isSubscribed = false;
+        user.cancelAtPeriodEnd = false;
+        user.currentPeriodEnd = null;
         await user.save();
+
+        // Deactivate accounts
+        await Account.updateMany({ user_id: user._id }, { isSubscribed: false });
 
         res.json({
             status: 'success',
-            message: 'Subscription cancellation scheduled at end of billing period',
+            message: 'Subscription canceled and refunded successfully',
             results: results,
         });
 
@@ -332,7 +338,7 @@ router.post('/stripe-webhook', async (req, res) => {
 });
 
 /**
- * Handle subscription canceled — delete user and all data (unless free user)
+ * Handle subscription canceled — deactivate user (skip for free users)
  */
 async function handleSubscriptionCanceled(stripeSubscription: Stripe.Subscription) {
     const sub = await Subscription.findOne({ stripeSubscriptionId: stripeSubscription.id });
@@ -361,53 +367,20 @@ async function handleSubscriptionCanceled(stripeSubscription: Stripe.Subscriptio
         return;
     }
 
-    // Free users keep their data — only deactivate subscription fields
+    // Free users keep their subscription active — no changes needed
     if (user.isFreeUser) {
-        console.log(`Webhook: User ${user.email} is a free user, skipping data deletion`);
+        console.log(`Webhook: User ${user.email} is a free user, skipping deactivation`);
         return;
     }
 
-    // Non-free user with no active subscriptions — delete user and all related data
-    console.log(`Webhook: Deleting user ${user.email} and all related data after subscription ended`);
+    // Deactivate user subscription
+    user.isSubscribed = false;
+    user.cancelAtPeriodEnd = false;
+    user.currentPeriodEnd = null;
+    await user.save();
 
-    // Delete Stripe customer
-    try {
-        const settings = await Settings.findOne();
-        if (settings?.stripeSecretKey) {
-            const stripe = new Stripe(settings.stripeSecretKey, {
-                apiVersion: '2024-12-18.acacia' as any,
-            });
-            const customerId = sub.stripeCustomerId;
-            if (customerId) {
-                await stripe.customers.del(customerId);
-            }
-        }
-    } catch (stripeErr: any) {
-        if (stripeErr.code !== 'resource_missing') {
-            console.error(`Failed to delete Stripe customer:`, stripeErr.message);
-        }
-    }
-
-    // Delete all subscriptions
-    await Subscription.deleteMany({ userId: user._id });
-
-    // Delete transactions for all user accounts
-    const accounts = await Account.find({ user_id: user._id });
-    const accountIds = accounts.map(a => a._id);
-    if (accountIds.length > 0) {
-        await Transaction.deleteMany({ accountId: { $in: accountIds } });
-    }
-
-    // Delete accounts
-    await Account.deleteMany({ user_id: user._id });
-
-    // Delete spreadsheet records
-    await UserSpreadsheet.deleteMany({ userId: user._id });
-
-    // Delete the user
-    await User.findByIdAndDelete(user._id);
-
-    console.log(`Webhook: Successfully deleted user ${user.email} and all related data`);
+    await Account.updateMany({ user_id: user._id }, { isSubscribed: false });
+    console.log(`Webhook: Deactivated user ${user.email} after subscription ended`);
 }
 
 /**

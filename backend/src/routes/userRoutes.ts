@@ -8,6 +8,7 @@ import Subscription from '../models/Subscription.js';
 import Settings from '../models/Settings.js';
 import { gasAuth } from '../middleware/gasAuthMiddleware.js';
 import { auth } from '../middleware/authMiddleware.js';
+import { refundSubscription } from '../utils/stripeRefund.js';
 
 const router = express.Router();
 
@@ -111,8 +112,9 @@ router.post('/:id/set-free-user', auth, async (req, res) => {
             return res.status(400).json({ message: 'User is already a free user' });
         }
 
-        // Cancel all Stripe subscriptions for this user
+        // Refund and cancel all Stripe subscriptions for this user
         const subscriptions = await Subscription.find({ userId: user._id });
+        const refunds: string[] = [];
         if (subscriptions.length > 0) {
             try {
                 const settings = await Settings.findOne();
@@ -123,22 +125,15 @@ router.post('/:id/set-free-user', auth, async (req, res) => {
 
                     for (const sub of subscriptions) {
                         try {
+                            // Refund before canceling
+                            const refund = await refundSubscription(stripe, sub.stripeSubscriptionId);
+                            if (refund) {
+                                refunds.push(`${refund.amount / 100} ${refund.currency}`);
+                            }
                             await stripe.subscriptions.cancel(sub.stripeSubscriptionId);
                         } catch (stripeErr: any) {
                             if (stripeErr.code !== 'resource_missing') {
                                 console.error(`Failed to cancel Stripe sub ${sub.stripeSubscriptionId}:`, stripeErr.message);
-                            }
-                        }
-                    }
-
-                    // Delete Stripe customer
-                    const customerId = subscriptions[0]?.stripeCustomerId;
-                    if (customerId) {
-                        try {
-                            await stripe.customers.del(customerId);
-                        } catch (stripeErr: any) {
-                            if (stripeErr.code !== 'resource_missing') {
-                                console.error(`Failed to delete Stripe customer ${customerId}:`, stripeErr.message);
                             }
                         }
                     }
@@ -165,6 +160,7 @@ router.post('/:id/set-free-user', auth, async (req, res) => {
         res.json({
             status: 'success',
             message: `User ${user.email} has been set as a free user`,
+            refunds: refunds.length > 0 ? refunds : undefined,
         });
     } catch (err: any) {
         console.error('Set free user error:', err);
@@ -183,7 +179,7 @@ router.delete('/:id', auth, async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // 1. Cancel and delete Stripe subscriptions
+        // 1. Refund, cancel, and delete Stripe subscriptions
         const subscriptions = await Subscription.find({ userId: user._id });
         if (subscriptions.length > 0) {
             try {
@@ -195,6 +191,8 @@ router.delete('/:id', auth, async (req, res) => {
 
                     for (const sub of subscriptions) {
                         try {
+                            // Refund before canceling
+                            await refundSubscription(stripe, sub.stripeSubscriptionId);
                             await stripe.subscriptions.cancel(sub.stripeSubscriptionId);
                         } catch (stripeErr: any) {
                             // Ignore if subscription already canceled or missing
