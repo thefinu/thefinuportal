@@ -38,34 +38,38 @@ router.post('/create-checkout-session', gasAuth, async (req: GasAuthRequest, res
             return res.status(500).json({ message: 'Stripe is not configured' });
         }
 
+        if (!settings.stripePriceId) {
+            return res.status(500).json({ message: 'Stripe Price ID is not configured in settings' });
+        }
+
         const stripe = new Stripe(settings.stripeSecretKey, {
             apiVersion: '2024-12-18.acacia' as any,
         });
 
-        // Find the default price from Stripe (first active price)
-        const prices = await stripe.prices.list({ active: true, limit: 1 });
-        if (!prices.data.length) {
-            return res.status(500).json({ message: 'No active price found in Stripe' });
-        }
-        const priceId = prices.data[0]!.id;
-
         const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
+        const trialDays = settings.stripeTrialDays ?? 14;
 
-        const session = await stripe.checkout.sessions.create({
+        const sessionParams: Stripe.Checkout.SessionCreateParams = {
             mode: 'subscription',
             customer_email: userEmail,
-            subscription_data: {
-                trial_period_days: 14,
-            },
             success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}&spreadsheet_id=${encodeURIComponent(spreadsheetId || '')}`,
             cancel_url: `${baseUrl}/cancel?spreadsheet_id=${encodeURIComponent(spreadsheetId || '')}`,
             line_items: [
                 {
-                    price: priceId,
+                    price: settings.stripePriceId,
                     quantity: 1,
                 },
             ],
-        });
+        };
+
+        // Only add trial if days > 0
+        if (trialDays > 0) {
+            sessionParams.subscription_data = {
+                trial_period_days: trialDays,
+            };
+        }
+
+        const session = await stripe.checkout.sessions.create(sessionParams);
 
         res.json({ url: session.url });
     } catch (err: any) {

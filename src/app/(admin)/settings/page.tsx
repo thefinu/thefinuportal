@@ -20,6 +20,8 @@ export default function SettingsPage() {
         stripePublicKey: "",
         stripeSecretKey: "",
         stripeWebhookSecret: "",
+        stripePriceId: "",
+        stripeTrialDays: "14",
         stripePaymentMode: "sandbox",
         smtpHost: "smtp.gmail.com",
         smtpPort: "587",
@@ -198,6 +200,37 @@ export default function SettingsPage() {
                                 <option value="sandbox">Sandbox</option>
                                 <option value="production">Production</option>
                             </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Stripe Price ID</label>
+                            <input
+                                type="text"
+                                name="stripePriceId"
+                                value={settings.stripePriceId}
+                                onChange={handleChange}
+                                className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none"
+                                placeholder="price_..."
+                            />
+                            <p className="mt-1 text-xs text-slate-500 flex items-center">
+                                <Info className="mr-1 h-3 w-3" />
+                                The Stripe Price ID used for subscription checkout.
+                            </p>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Default Trial Period (Days)</label>
+                            <input
+                                type="number"
+                                name="stripeTrialDays"
+                                value={settings.stripeTrialDays}
+                                onChange={handleChange}
+                                min="0"
+                                className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none"
+                                placeholder="14"
+                            />
+                            <p className="mt-1 text-xs text-slate-500 flex items-center">
+                                <Info className="mr-1 h-3 w-3" />
+                                Number of free trial days for new subscriptions. Set to 0 to disable trial.
+                            </p>
                         </div>
                     </div>
                 </div>

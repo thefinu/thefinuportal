@@ -11,6 +11,8 @@ export interface ISettings extends Document {
     stripePublicKey: string;
     stripeSecretKey: string;
     stripePaymentMode: 'sandbox' | 'production';
+    stripePriceId: string;
+    stripeTrialDays: number;
     stripeWebhookSecret: string;
     plaidWebhookUrl: string;
     smtpHost: string;
@@ -32,6 +34,8 @@ const SettingsSchema: Schema = new Schema({
     stripePublicKey: { type: String, default: '' },
     stripeSecretKey: { type: String, default: '' },
     stripePaymentMode: { type: String, enum: ['sandbox', 'production'], default: 'sandbox' },
+    stripePriceId: { type: String, default: '' },
+    stripeTrialDays: { type: Number, default: 14 },
     stripeWebhookSecret: { type: String, default: '' },
     smtpHost: { type: String, default: 'smtp.gmail.com' },
     smtpPort: { type: Number, default: 587 },
