@@ -49,6 +49,11 @@ app.get('/', (req, res) => {
     res.send('Financial Portal API is running');
 });
 
+// Start server immediately so Cloud Run health check passes
+app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`🚀 Server is running on port ${PORT}`);
+});
+
 // Database Connection
 const MONGODB_URI = process.env.MONGODB_URI;
 
@@ -61,9 +66,6 @@ console.log('Connecting to MongoDB...');
 mongoose.connect(MONGODB_URI)
     .then(() => {
         console.log('✅ Connected to MongoDB Atlas');
-        app.listen(PORT, () => {
-            console.log(`🚀 Server is running on port ${PORT}`);
-        });
     })
     .catch((err) => {
         console.error('❌ MongoDB connection error:', err);
