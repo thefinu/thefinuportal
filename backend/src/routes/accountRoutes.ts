@@ -106,16 +106,24 @@ router.post('/store-plaid', gasAuth, async (req, res) => {
 // Plaid Webhook Endpoint
 router.post('/plaid-webhook', async (req, res) => {
     try {
-        const { webhook_code, item_id } = req.body;
+        const { webhook_type, webhook_code, item_id } = req.body;
 
-        console.log(`Received Plaid webhook: ${webhook_code} for item: ${item_id}`);
+        console.log(`Received Plaid webhook: ${webhook_type}/${webhook_code} for item: ${item_id}`);
 
-        if (webhook_code === 'SYNC_UPDATES_AVAILABLE') {
+        if (webhook_type === 'TRANSACTIONS' && webhook_code === 'SYNC_UPDATES_AVAILABLE') {
             const result = await Account.updateMany(
                 { item_id: item_id },
                 { $set: { is_update: true } }
             );
             console.log(`Updated ${result.modifiedCount} accounts for item_id: ${item_id} to is_update: true`);
+        }
+
+        if (webhook_type === 'HOLDINGS' && webhook_code === 'DEFAULT_UPDATE') {
+            const result = await Account.updateMany(
+                { item_id: item_id },
+                { $set: { is_update: true } }
+            );
+            console.log(`Updated ${result.modifiedCount} accounts for item_id: ${item_id} to is_update: true (holdings)`);
         }
 
         // Always return 200 to Plaid to acknowledge receipt
