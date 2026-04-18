@@ -1,8 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Save, Loader2, Info, Key, Globe, Mail, FileText, CreditCard } from "lucide-react";
+import { Save, Loader2, Info, Key, Globe, Mail, FileText, CreditCard, Plus, Pencil, Trash2, X, Check } from "lucide-react";
 import api from "@/lib/api";
+
+interface PlaidPricing {
+    _id: string;
+    product: string;
+    rate: number;
+    perCall: boolean;
+    perMonth: boolean;
+}
+
+const emptyPricing = { product: "", rate: "", perCall: false, perMonth: false };
 
 export default function SettingsPage() {
     const [loading, setLoading] = useState(true);
@@ -30,6 +40,16 @@ export default function SettingsPage() {
         contactEmail: "",
     });
 
+    // Plaid Pricing state
+    const [pricing, setPricing] = useState<PlaidPricing[]>([]);
+    const [pricingLoading, setPricingLoading] = useState(true);
+    const [pricingMessage, setPricingMessage] = useState({ type: "", content: "" });
+    const [editingPricing, setEditingPricing] = useState<PlaidPricing | null>(null);
+    const [addingPricing, setAddingPricing] = useState(false);
+    const [pricingForm, setPricingForm] = useState<{ product: string; rate: string; perCall: boolean; perMonth: boolean }>(emptyPricing);
+    const [savingPricing, setSavingPricing] = useState(false);
+    const [deletingPricingId, setDeletingPricingId] = useState<string | null>(null);
+
     useEffect(() => {
         const fetchSettings = async () => {
             try {
@@ -44,7 +64,20 @@ export default function SettingsPage() {
             }
         };
         fetchSettings();
+        fetchPricing();
     }, []);
+
+    const fetchPricing = async () => {
+        setPricingLoading(true);
+        try {
+            const res = await api.get("/plaid/pricing");
+            setPricing(res.data);
+        } catch (err) {
+            console.error("Failed to fetch pricing", err);
+        } finally {
+            setPricingLoading(false);
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -63,6 +96,66 @@ export default function SettingsPage() {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setSettings(prev => ({ ...prev, [name]: value }));
+    };
+
+    const openAddPricing = () => {
+        setEditingPricing(null);
+        setPricingForm(emptyPricing);
+        setAddingPricing(true);
+        setPricingMessage({ type: "", content: "" });
+    };
+
+    const openEditPricing = (item: PlaidPricing) => {
+        setEditingPricing(item);
+        setPricingForm({ product: item.product, rate: String(item.rate), perCall: item.perCall, perMonth: item.perMonth });
+        setAddingPricing(true);
+        setPricingMessage({ type: "", content: "" });
+    };
+
+    const cancelPricingForm = () => {
+        setAddingPricing(false);
+        setEditingPricing(null);
+        setPricingForm(emptyPricing);
+    };
+
+    const handleSavePricing = async () => {
+        if (!pricingForm.product || pricingForm.rate === "") {
+            setPricingMessage({ type: "error", content: "Product and rate are required." });
+            return;
+        }
+        setSavingPricing(true);
+        setPricingMessage({ type: "", content: "" });
+        try {
+            const payload = {
+                product: pricingForm.product,
+                rate: parseFloat(pricingForm.rate),
+                perCall: pricingForm.perCall,
+                perMonth: pricingForm.perMonth,
+            };
+            if (editingPricing) {
+                await api.put(`/plaid/pricing/${editingPricing._id}`, payload);
+            } else {
+                await api.post("/plaid/pricing", payload);
+            }
+            await fetchPricing();
+            cancelPricingForm();
+        } catch (err: any) {
+            setPricingMessage({ type: "error", content: err.response?.data?.message || "Failed to save pricing." });
+        } finally {
+            setSavingPricing(false);
+        }
+    };
+
+    const handleDeletePricing = async (id: string) => {
+        setDeletingPricingId(id);
+        try {
+            await api.delete(`/plaid/pricing/${id}`);
+            await fetchPricing();
+        } catch (err) {
+            console.error("Failed to delete pricing", err);
+        } finally {
+            setDeletingPricingId(null);
+        }
     };
 
     if (loading) {
@@ -381,6 +474,171 @@ export default function SettingsPage() {
                     </button>
                 </div>
             </form>
+
+            {/* Plaid Pricing Model — separate from main settings form */}
+            <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-4">
+                    <div className="flex items-center">
+                        <Key className="mr-2 h-5 w-5 text-secondary" />
+                        <h2 className="text-lg font-bold text-slate-900">Plaid Pricing Model</h2>
+                    </div>
+                    {!addingPricing && (
+                        <button
+                            onClick={openAddPricing}
+                            className="inline-flex items-center rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 transition-all"
+                        >
+                            <Plus className="mr-1 h-4 w-4" />
+                            Add Product
+                        </button>
+                    )}
+                </div>
+
+                {pricingMessage.content && (
+                    <div className={`mb-4 p-3 rounded-lg text-sm flex items-center ${pricingMessage.type === 'error' ? 'bg-rose-50 text-rose-700 border border-rose-100' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>
+                        <Info className="mr-2 h-4 w-4" />
+                        {pricingMessage.content}
+                    </div>
+                )}
+
+                {/* Add / Edit form */}
+                {addingPricing && (
+                    <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                        <h3 className="text-sm font-semibold text-slate-700 mb-3">
+                            {editingPricing ? "Edit Product" : "New Product"}
+                        </h3>
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Product Name</label>
+                                <input
+                                    type="text"
+                                    value={pricingForm.product}
+                                    onChange={(e) => setPricingForm(f => ({ ...f, product: e.target.value }))}
+                                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-secondary focus:outline-none bg-white"
+                                    placeholder="e.g. Transactions, Investments"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Rate (USD)</label>
+                                <input
+                                    type="number"
+                                    value={pricingForm.rate}
+                                    onChange={(e) => setPricingForm(f => ({ ...f, rate: e.target.value }))}
+                                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-secondary focus:outline-none bg-white"
+                                    placeholder="0.00"
+                                    step="0.01"
+                                    min="0"
+                                />
+                            </div>
+                            <div className="flex items-center gap-6">
+                                <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={pricingForm.perCall}
+                                        onChange={(e) => setPricingForm(f => ({ ...f, perCall: e.target.checked }))}
+                                        className="h-4 w-4 rounded border-slate-300 accent-secondary"
+                                    />
+                                    Per Call
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={pricingForm.perMonth}
+                                        onChange={(e) => setPricingForm(f => ({ ...f, perMonth: e.target.checked }))}
+                                        className="h-4 w-4 rounded border-slate-300 accent-secondary"
+                                    />
+                                    Per Month
+                                </label>
+                            </div>
+                        </div>
+                        <div className="mt-4 flex gap-2 justify-end">
+                            <button
+                                onClick={cancelPricingForm}
+                                className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                            >
+                                <X className="mr-1 h-4 w-4" />
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSavePricing}
+                                disabled={savingPricing}
+                                className="inline-flex items-center rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 transition-all disabled:opacity-50"
+                            >
+                                {savingPricing ? (
+                                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Check className="mr-1 h-4 w-4" />
+                                )}
+                                {editingPricing ? "Update" : "Save"}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {pricingLoading ? (
+                    <div className="flex justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin text-secondary" />
+                    </div>
+                ) : pricing.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-slate-500">No pricing models configured yet.</p>
+                ) : (
+                    <table className="w-full text-left text-sm">
+                        <thead>
+                            <tr>
+                                <th className="px-4 py-3 bg-secondary text-white font-semibold rounded-tl-lg">Product</th>
+                                <th className="px-4 py-3 bg-secondary text-white font-semibold text-right">Rate (USD)</th>
+                                <th className="px-4 py-3 bg-secondary text-white font-semibold text-center">Per Call</th>
+                                <th className="px-4 py-3 bg-secondary text-white font-semibold text-center">Per Month</th>
+                                <th className="px-4 py-3 bg-secondary text-white font-semibold text-right rounded-tr-lg">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {pricing.map((item) => (
+                                <tr key={item._id} className="hover:bg-slate-50">
+                                    <td className="px-4 py-3 font-medium text-slate-800">{item.product}</td>
+                                    <td className="px-4 py-3 text-right font-mono text-slate-700">${item.rate.toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-center">
+                                        {item.perCall ? (
+                                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700">Yes</span>
+                                        ) : (
+                                            <span className="text-slate-300">—</span>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                        {item.perMonth ? (
+                                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700">Yes</span>
+                                        ) : (
+                                            <span className="text-slate-300">—</span>
+                                        )}
+                                    </td>
+                                    <td className="px-4 py-3 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <button
+                                                onClick={() => openEditPricing(item)}
+                                                className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                                            >
+                                                <Pencil className="mr-1 h-3 w-3" />
+                                                Edit
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeletePricing(item._id)}
+                                                disabled={deletingPricingId === item._id}
+                                                className="inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
+                                            >
+                                                {deletingPricingId === item._id ? (
+                                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                                ) : (
+                                                    <Trash2 className="mr-1 h-3 w-3" />
+                                                )}
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
         </div>
     );
 }

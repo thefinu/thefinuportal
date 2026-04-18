@@ -12,6 +12,7 @@ import userRoutes from './routes/userRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
+import plaidRoutes from './routes/plaidRoutes.js';
 
 console.log('Starting server...');
 dotenv.config();
@@ -41,6 +42,7 @@ apiRouter.use('/users', userRoutes);
 apiRouter.use('/payment', paymentRoutes);
 apiRouter.use('/dashboard', dashboardRoutes);
 apiRouter.use('/contact', contactRoutes);
+apiRouter.use('/plaid', plaidRoutes);
 
 app.use('/api', apiRouter);
 app.use('/', apiRouter);

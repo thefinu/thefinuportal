@@ -10,6 +10,9 @@ import {
     X,
     AlertTriangle,
     ShieldCheck,
+    BarChart2,
+    ChevronLeft,
+    ChevronRight,
 } from "lucide-react";
 import api from "@/lib/api";
 
@@ -24,6 +27,29 @@ interface User {
     createdAt: string;
 }
 
+interface InvoiceItem {
+    product: string;
+    unitPrice: number;
+    quantity: number;
+    amount: number;
+}
+
+interface MonthlyUsage {
+    year: number;
+    month: number;
+    items: InvoiceItem[];
+    subtotal: number;
+}
+
+const MONTH_NAMES = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+];
+
+function fmt(value: number) {
+    return `$${value.toFixed(2)}`;
+}
+
 export default function UsersPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [users, setUsers] = useState<User[]>([]);
@@ -34,6 +60,13 @@ export default function UsersPage() {
     const [freeUserModal, setFreeUserModal] = useState<User | null>(null);
     const [settingFreeUser, setSettingFreeUser] = useState(false);
     const [freeUserMessage, setFreeUserMessage] = useState({ type: "", content: "" });
+
+    // API Usage modal
+    const [usageModal, setUsageModal] = useState<User | null>(null);
+    const [monthlyUsage, setMonthlyUsage] = useState<MonthlyUsage | null>(null);
+    const [usageLoading, setUsageLoading] = useState(false);
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
 
     const fetchUsers = async () => {
         try {
@@ -49,6 +82,40 @@ export default function UsersPage() {
     useEffect(() => {
         fetchUsers();
     }, []);
+
+    const fetchMonthlyUsage = async (userId: string, year: number, month: number) => {
+        setUsageLoading(true);
+        try {
+            const res = await api.get(`/plaid/usage/user/${userId}/monthly?year=${year}&month=${month}`);
+            setMonthlyUsage(res.data);
+        } catch (err) {
+            console.error("Failed to fetch monthly usage", err);
+        } finally {
+            setUsageLoading(false);
+        }
+    };
+
+    const openUsageModal = (user: User) => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+        setSelectedYear(year);
+        setSelectedMonth(month);
+        setMonthlyUsage(null);
+        setUsageModal(user);
+        fetchMonthlyUsage(user._id, year, month);
+    };
+
+    const navigateMonth = (dir: -1 | 1) => {
+        if (!usageModal) return;
+        let m = selectedMonth + dir;
+        let y = selectedYear;
+        if (m < 1)  { m = 12; y -= 1; }
+        if (m > 12) { m = 1;  y += 1; }
+        setSelectedMonth(m);
+        setSelectedYear(y);
+        fetchMonthlyUsage(usageModal._id, y, m);
+    };
 
     const handleDelete = async () => {
         if (!deleteModal) return;
@@ -98,6 +165,10 @@ export default function UsersPage() {
         user.email?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    const subtotal   = monthlyUsage?.subtotal ?? 0;
+    const tax        = 0;
+    const total      = subtotal + tax;
+
     return (
         <div className="p-8">
             <div className="flex items-center justify-between">
@@ -132,7 +203,7 @@ export default function UsersPage() {
                 ) : (
                     <table className="w-full text-left">
                         <thead>
-                            <tr className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                            <tr className="text-xs font-semibold uppercase tracking-wider">
                                 <th className="px-6 py-4 bg-secondary text-white">User</th>
                                 <th className="px-6 py-4 bg-secondary text-white">Status</th>
                                 <th className="px-6 py-4 bg-secondary text-white">Trial End</th>
@@ -164,60 +235,45 @@ export default function UsersPage() {
                                         </td>
                                         <td className="px-6 py-4">
                                             {user.isFreeUser ? (
-                                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">
-                                                    Free User
-                                                </span>
+                                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">Free User</span>
                                             ) : user.cancelAtPeriodEnd ? (
-                                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-orange-100 text-orange-800">
-                                                    Canceling
-                                                </span>
+                                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-orange-100 text-orange-800">Canceling</span>
                                             ) : user.isSubscribed ? (
-                                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800">
-                                                    Subscribed
-                                                </span>
+                                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-800">Subscribed</span>
                                             ) : (
-                                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">
-                                                    Inactive
-                                                </span>
+                                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">Inactive</span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4 text-sm text-slate-500">
-                                            {user.trialEnd
-                                                ? new Date(user.trialEnd).toLocaleDateString()
-                                                : <span className="text-slate-300">-</span>
-                                            }
+                                            {user.trialEnd ? new Date(user.trialEnd).toLocaleDateString() : <span className="text-slate-300">-</span>}
                                         </td>
                                         <td className="px-6 py-4 text-sm text-slate-500">
-                                            {user.currentPeriodEnd
-                                                ? new Date(user.currentPeriodEnd).toLocaleDateString()
-                                                : <span className="text-slate-300">-</span>
-                                            }
+                                            {user.currentPeriodEnd ? new Date(user.currentPeriodEnd).toLocaleDateString() : <span className="text-slate-300">-</span>}
                                         </td>
                                         <td className="px-6 py-4 text-sm text-slate-500">
                                             {new Date(user.createdAt).toLocaleDateString()}
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2">
+                                                <button
+                                                    onClick={() => openUsageModal(user)}
+                                                    className="inline-flex items-center rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-100 transition-colors"
+                                                >
+                                                    <BarChart2 className="mr-1 h-3.5 w-3.5" />
+                                                    API Usage
+                                                </button>
                                                 {!user.isFreeUser && (
                                                     <button
-                                                        onClick={() => {
-                                                            setFreeUserModal(user);
-                                                            setFreeUserMessage({ type: "", content: "" });
-                                                        }}
+                                                        onClick={() => { setFreeUserModal(user); setFreeUserMessage({ type: "", content: "" }); }}
                                                         className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
-                                                        title="Set as free user"
                                                     >
                                                         <ShieldCheck className="mr-1 h-3.5 w-3.5" />
                                                         Set Free
                                                     </button>
                                                 )}
                                                 <button
-                                                    onClick={() => {
-                                                        setDeleteModal(user);
-                                                        setDeleteMessage({ type: "", content: "" });
-                                                    }}
+                                                    onClick={() => { setDeleteModal(user); setDeleteMessage({ type: "", content: "" }); }}
                                                     className="inline-flex items-center rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors"
-                                                    title="Delete user and all related data"
                                                 >
                                                     <Trash2 className="mr-1 h-3.5 w-3.5" />
                                                     Delete
@@ -232,7 +288,113 @@ export default function UsersPage() {
                 )}
             </div>
 
-            {/* Delete Confirmation Modal */}
+            {/* ── API Usage Modal (invoice style) ── */}
+            {usageModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                    <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
+                            <div>
+                                <h2 className="text-lg font-semibold text-slate-900">API Usage</h2>
+                                <p className="text-xs text-slate-500 mt-0.5">{usageModal.email}</p>
+                            </div>
+                            <button onClick={() => setUsageModal(null)} className="text-slate-400 hover:text-slate-600">
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        {/* Month navigation */}
+                        <div className="flex items-center justify-center gap-4 px-6 py-3 border-b border-slate-100 bg-slate-50">
+                            <button
+                                onClick={() => navigateMonth(-1)}
+                                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200 transition-colors"
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                            </button>
+                            <span className="text-sm font-semibold text-slate-700 w-36 text-center">
+                                {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+                            </span>
+                            <button
+                                onClick={() => navigateMonth(1)}
+                                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200 transition-colors"
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        {/* Invoice body */}
+                        <div className="px-6 py-4">
+                            {usageLoading ? (
+                                <div className="flex justify-center py-12">
+                                    <Loader2 className="h-6 w-6 animate-spin text-secondary" />
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Line items table */}
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="border-b border-slate-200">
+                                                <th className="pb-3 text-left font-semibold text-slate-600">Item</th>
+                                                <th className="pb-3 text-right font-semibold text-slate-600">Unit price</th>
+                                                <th className="pb-3 text-right font-semibold text-slate-600">Quantity</th>
+                                                <th className="pb-3 text-right font-semibold text-slate-600">Amount</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {monthlyUsage?.items.map((item) => (
+                                                <tr key={item.product}>
+                                                    <td className="py-3 text-slate-700">{item.product} usage</td>
+                                                    <td className="py-3 text-right text-slate-500">{fmt(item.unitPrice)}</td>
+                                                    <td className={`py-3 text-right font-medium ${item.quantity > 0 ? 'text-secondary' : 'text-slate-400'}`}>
+                                                        {item.quantity}
+                                                    </td>
+                                                    <td className="py-3 text-right font-medium text-slate-800">{fmt(item.amount)}</td>
+                                                </tr>
+                                            ))}
+                                            {!monthlyUsage && (
+                                                <tr>
+                                                    <td colSpan={4} className="py-6 text-center text-slate-400">No data</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+
+                                    {/* Totals */}
+                                    <div className="mt-4 border-t border-slate-200 pt-4 space-y-1.5">
+                                        <div className="flex justify-end gap-16 text-sm text-slate-600">
+                                            <span>Subtotal</span>
+                                            <span className="w-20 text-right font-medium text-slate-800">{fmt(subtotal)}</span>
+                                        </div>
+                                        <div className="flex justify-end gap-16 text-sm text-slate-600">
+                                            <span>Tax</span>
+                                            <span className="w-20 text-right font-medium text-slate-800">{fmt(tax)}</span>
+                                        </div>
+                                        <div className="flex justify-end gap-16 text-sm text-slate-600">
+                                            <span>Total</span>
+                                            <span className="w-20 text-right font-medium text-slate-800">{fmt(total)}</span>
+                                        </div>
+                                        <div className="flex justify-end gap-16 pt-2 border-t border-slate-200 text-sm">
+                                            <span className="font-bold text-slate-800">Amount due:</span>
+                                            <span className="w-20 text-right font-bold text-slate-900">{fmt(total)}</span>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end px-6 pb-6">
+                            <button
+                                onClick={() => setUsageModal(null)}
+                                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Delete Confirmation Modal ── */}
             {deleteModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
                     <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
@@ -242,7 +404,6 @@ export default function UsersPage() {
                                 <X className="h-5 w-5" />
                             </button>
                         </div>
-
                         <div className="space-y-4">
                             <div className="flex items-start gap-3 p-4 rounded-lg bg-red-50 border border-red-100">
                                 <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
@@ -253,20 +414,15 @@ export default function UsersPage() {
                                     </p>
                                 </div>
                             </div>
-
                             <div>
                                 <p className="text-sm text-slate-600">User</p>
                                 <p className="font-medium text-slate-900">{deleteModal.email}</p>
                             </div>
-
                             {deleteMessage.content && (
-                                <p className={`text-sm font-medium ${
-                                    deleteMessage.type === "error" ? "text-red-600" : "text-emerald-600"
-                                }`}>
+                                <p className={`text-sm font-medium ${deleteMessage.type === "error" ? "text-red-600" : "text-emerald-600"}`}>
                                     {deleteMessage.content}
                                 </p>
                             )}
-
                             <div className="flex gap-3 pt-2">
                                 <button
                                     onClick={() => setDeleteModal(null)}
@@ -279,18 +435,15 @@ export default function UsersPage() {
                                     disabled={deleting}
                                     className="flex-1 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors disabled:opacity-50"
                                 >
-                                    {deleting ? (
-                                        <Loader2 className="mx-auto h-4 w-4 animate-spin" />
-                                    ) : (
-                                        "Delete Permanently"
-                                    )}
+                                    {deleting ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Delete Permanently"}
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
-            {/* Set Free User Confirmation Modal */}
+
+            {/* ── Set Free User Modal ── */}
             {freeUserModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
                     <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
@@ -300,7 +453,6 @@ export default function UsersPage() {
                                 <X className="h-5 w-5" />
                             </button>
                         </div>
-
                         <div className="space-y-4">
                             <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-50 border border-blue-100">
                                 <ShieldCheck className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
@@ -311,20 +463,15 @@ export default function UsersPage() {
                                     </p>
                                 </div>
                             </div>
-
                             <div>
                                 <p className="text-sm text-slate-600">User</p>
                                 <p className="font-medium text-slate-900">{freeUserModal.email}</p>
                             </div>
-
                             {freeUserMessage.content && (
-                                <p className={`text-sm font-medium ${
-                                    freeUserMessage.type === "error" ? "text-red-600" : "text-emerald-600"
-                                }`}>
+                                <p className={`text-sm font-medium ${freeUserMessage.type === "error" ? "text-red-600" : "text-emerald-600"}`}>
                                     {freeUserMessage.content}
                                 </p>
                             )}
-
                             <div className="flex gap-3 pt-2">
                                 <button
                                     onClick={() => setFreeUserModal(null)}
@@ -337,11 +484,7 @@ export default function UsersPage() {
                                     disabled={settingFreeUser}
                                     className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
                                 >
-                                    {settingFreeUser ? (
-                                        <Loader2 className="mx-auto h-4 w-4 animate-spin" />
-                                    ) : (
-                                        "Confirm Free User"
-                                    )}
+                                    {settingFreeUser ? <Loader2 className="mx-auto h-4 w-4 animate-spin" /> : "Confirm Free User"}
                                 </button>
                             </div>
                         </div>
