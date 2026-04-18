@@ -140,7 +140,10 @@ export default function SettingsPage() {
             await fetchPricing();
             cancelPricingForm();
         } catch (err: any) {
-            setPricingMessage({ type: "error", content: err.response?.data?.message || "Failed to save pricing." });
+            console.error("[pricing save] error:", err.response ?? err);
+            const status = err.response?.status;
+            const msg    = err.response?.data?.message || err.message || "Failed to save pricing.";
+            setPricingMessage({ type: "error", content: status ? `[${status}] ${msg}` : msg });
         } finally {
             setSavingPricing(false);
         }

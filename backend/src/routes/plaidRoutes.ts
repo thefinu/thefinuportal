@@ -153,14 +153,20 @@ router.get('/pricing', auth, async (req, res) => {
 router.post('/pricing', auth, async (req, res) => {
     try {
         const { product, rate, perCall, perMonth } = req.body;
-        if (!product || rate === undefined) {
+        console.log('[plaid/pricing POST] body:', req.body);
+        if (!product || rate === undefined || rate === null) {
             return res.status(400).json({ message: 'product and rate are required' });
         }
-        const pricing = new PlaidPricing({ product, rate, perCall, perMonth });
+        const parsedRate = typeof rate === 'string' ? parseFloat(rate) : Number(rate);
+        if (isNaN(parsedRate)) {
+            return res.status(400).json({ message: 'rate must be a valid number' });
+        }
+        const pricing = new PlaidPricing({ product, rate: parsedRate, perCall: !!perCall, perMonth: !!perMonth });
         await pricing.save();
         res.status(201).json(pricing);
     } catch (err: any) {
-        res.status(500).json({ message: err.message });
+        console.error('[plaid/pricing POST] error:', err);
+        res.status(500).json({ message: err.message || 'Internal server error' });
     }
 });
 
@@ -168,15 +174,24 @@ router.post('/pricing', auth, async (req, res) => {
 router.put('/pricing/:id', auth, async (req, res) => {
     try {
         const { product, rate, perCall, perMonth } = req.body;
+        console.log('[plaid/pricing PUT] body:', req.body);
+        if (!product || rate === undefined || rate === null) {
+            return res.status(400).json({ message: 'product and rate are required' });
+        }
+        const parsedRate = typeof rate === 'string' ? parseFloat(rate) : Number(rate);
+        if (isNaN(parsedRate)) {
+            return res.status(400).json({ message: 'rate must be a valid number' });
+        }
         const pricing = await PlaidPricing.findByIdAndUpdate(
             req.params.id,
-            { product, rate, perCall, perMonth },
+            { product, rate: parsedRate, perCall: !!perCall, perMonth: !!perMonth },
             { new: true, runValidators: true }
         );
         if (!pricing) return res.status(404).json({ message: 'Pricing model not found' });
         res.json(pricing);
     } catch (err: any) {
-        res.status(500).json({ message: err.message });
+        console.error('[plaid/pricing PUT] error:', err);
+        res.status(500).json({ message: err.message || 'Internal server error' });
     }
 });
 
