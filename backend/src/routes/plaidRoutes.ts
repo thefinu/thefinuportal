@@ -37,7 +37,7 @@ router.post('/usage/log', async (req, res) => {
         }
 
         // 2. Resolve pricing from plaid_pricing
-        const productName = BILLING_PRODUCT_MAP[billing];
+        const productName = BILLING_PRODUCT_MAP[billing] as string;
         const pricing = await PlaidPricing.findOne({ product: productName });
         if (!pricing) {
             return res.status(404).json({ message: `Pricing not configured for product: ${productName}` });
@@ -130,7 +130,7 @@ router.get('/usage/user/:userId/monthly', auth, async (req, res) => {
 // GET /api/plaid/usage/user/:userId — get usage for a specific user (admin)
 router.get('/usage/user/:userId', auth, async (req, res) => {
     try {
-        const usage = await PlaidUsage.find({ userId: req.params.userId })
+        const usage = await PlaidUsage.find({ userId: new mongoose.Types.ObjectId(req.params.userId) })
             .populate('productId', 'product rate perCall perMonth')
             .sort({ createdAt: -1 });
         res.json(usage);
