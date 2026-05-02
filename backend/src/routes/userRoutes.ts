@@ -229,13 +229,52 @@ router.delete('/:id', auth, async (req, res) => {
             await Transaction.deleteMany({ accountId: { $in: accountIds } });
         }
 
-        // 4. Delete accounts
+        // 4. If unsubscribed and not a free user, remove Plaid items before deleting accounts
+        if (!user.isSubscribed && !user.isFreeUser && accounts.length > 0) {
+            try {
+                const settings = await Settings.findOne();
+                if (settings?.plaidClientKey && settings?.plaidSecretKey) {
+                    const plaidBaseUrl = settings.plaidEnvironment === 'production'
+                        ? 'https://production.plaid.com'
+                        : 'https://sandbox.plaid.com';
+
+                    // Deduplicate access tokens — one item/remove call per linked item
+                    const uniqueTokens = [...new Set(
+                        accounts.map(a => a.access_token).filter(Boolean)
+                    )];
+
+                    for (const access_token of uniqueTokens) {
+                        try {
+                            const response = await fetch(`${plaidBaseUrl}/item/remove`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    client_id: settings.plaidClientKey,
+                                    secret: settings.plaidSecretKey,
+                                    access_token,
+                                }),
+                            });
+                            if (!response.ok) {
+                                const err = await response.json() as any;
+                                console.error(`Plaid item/remove failed for token: ${err?.error_message}`);
+                            }
+                        } catch (plaidErr: any) {
+                            console.error('Plaid item/remove error:', plaidErr.message);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Plaid cleanup error during user delete:', err);
+            }
+        }
+
+        // 5. Delete accounts
         await Account.deleteMany({ user_id: user._id });
 
-        // 5. Delete spreadsheet records
+        // 6. Delete spreadsheet records
         await UserSpreadsheet.deleteMany({ userId: user._id });
 
-        // 6. Delete the user
+        // 7. Delete the user
         await User.findByIdAndDelete(user._id);
 
         res.json({

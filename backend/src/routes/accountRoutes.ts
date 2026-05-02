@@ -135,6 +135,24 @@ router.post('/plaid-webhook', async (req, res) => {
     }
 });
 
+// Get accounts by item_id (authenticated GAS clients)
+router.get('/get-by-item-id/:itemId', gasAuth, async (req, res) => {
+    try {
+        const { itemId } = req.params;
+
+        const accounts = await Account.find({ item_id: itemId } as any);
+
+        if (!accounts.length) {
+            return res.status(404).json({ message: 'No accounts found for this item ID' });
+        }
+
+        res.status(200).json(accounts);
+    } catch (err: any) {
+        console.error('Error fetching accounts by item_id:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // Get accounts by user email (authenticated GAS clients)
 router.get('/get-by-email/:email', gasAuth, async (req, res) => {
     try {
