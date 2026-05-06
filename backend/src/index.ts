@@ -44,12 +44,11 @@ apiRouter.use('/dashboard', dashboardRoutes);
 apiRouter.use('/contact', contactRoutes);
 apiRouter.use('/plaid', plaidRoutes);
 
-app.use('/api', apiRouter);
-app.use('/', apiRouter);
-
 app.get('/', (req, res) => {
     res.send('Financial Portal API is running');
 });
+
+app.use('/api', apiRouter);
 
 // Start server immediately so Cloud Run health check passes
 app.listen(Number(PORT), '0.0.0.0', () => {
