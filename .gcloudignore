@@ -3,7 +3,8 @@
 .gitignore
 node_modules/
 .next/
-backend/
+backend/node_modules/
+backend/dist/
 .env
 *.env
 *.env.*
