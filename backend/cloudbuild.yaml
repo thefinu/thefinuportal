@@ -1,7 +1,6 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-backend'
-    dir: 'backend'
     args:
       - 'build'
       - '-t'
@@ -32,7 +31,7 @@ steps:
       - '--allow-unauthenticated'
       - '--port=8080'
       - '--set-secrets=MONGODB_URI=MONGODB_URI:latest,JWT_SECRET=JWT_SECRET:latest,SMTP_PASS=SMTP_PASS:latest'
-      - '--set-env-vars=NODE_ENV=production,SMTP_HOST=smtp.gmail.com,SMTP_PORT=587,SMTP_USER=anna@thefinu.com,CONTACT_EMAIL=anna@thefinu.com,APP_BASE_URL=https://thefinuportal-1014598876589.us-west2.run.app'
+      - '--set-env-vars=NODE_ENV=production,SMTP_HOST=smtp.gmail.com,SMTP_PORT=587,SMTP_USER=anna@thefinu.com,CONTACT_EMAIL=anna@thefinu.com,APP_BASE_URL=https://thefinu.com'
 
 images:
   - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/backend:$COMMIT_SHA'

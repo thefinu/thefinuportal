@@ -28,7 +28,25 @@ console.log(`Port defined: ${PORT}`);
 app.use('/api/payment/stripe-webhook', express.raw({ type: 'application/json' }));
 app.use('/payment/stripe-webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
-app.use(cors());
+
+const allowedOrigins = [
+    'https://thefinu.com',
+    'https://www.thefinu.com',
+    'https://admin.thefinu.com',
+    'http://localhost:3000',
+    'http://localhost:3001',
+];
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests with no origin (server-to-server, curl, Postman)
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error(`CORS: origin ${origin} not allowed`));
+        }
+    },
+    credentials: true,
+}));
 app.use(helmet());
 app.use(morgan('dev'));
 

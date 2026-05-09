@@ -38,7 +38,7 @@ images:
 substitutions:
   _REGION: us-west2
   _REPOSITORY: thefinuportal
-  _SERVICE_NAME: thefinuportal
+  _SERVICE_NAME: thefinuportal-frontend
 
 options:
   logging: CLOUD_LOGGING_ONLY
