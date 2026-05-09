@@ -27,8 +27,15 @@ export function middleware(request: NextRequest) {
     const isAdminPath = matchesPath(pathname, ADMIN_PATHS);
     const isPublicOnlyPath = matchesPath(pathname, PUBLIC_ONLY_PATHS);
 
+    if (isAdminDomain && pathname === '/') {
+        // admin.thefinu.com/ → admin.thefinu.com/dashboard
+        const url = request.nextUrl.clone();
+        url.pathname = '/dashboard';
+        return NextResponse.redirect(url);
+    }
+
     if (isAdminDomain && isPublicOnlyPath) {
-        // Redirect public-only paths to the main domain
+        // Redirect other public-only paths to the main domain
         const url = request.nextUrl.clone();
         url.host = host.replace(/^admin\./, '');
         return NextResponse.redirect(url);
