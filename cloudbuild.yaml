@@ -36,7 +36,7 @@ images:
   - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/frontend:latest'
 
 substitutions:
-  _REGION: us-west2
+  _REGION: us-central1
   _REPOSITORY: thefinuportal
   _SERVICE_NAME: thefinuportal-frontend
 

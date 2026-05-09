@@ -20,6 +20,6 @@ ignoredFiles:
   - "backend/**"
   - "cloudbuild-triggers/**"
 substitutions:
-  _REGION: us-west2
+  _REGION: us-central1
   _REPOSITORY: thefinuportal
   _SERVICE_NAME: thefinuportal-frontend
