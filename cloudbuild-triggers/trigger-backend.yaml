@@ -1,0 +1,19 @@
+name: deploy-backend
+description: "Deploy Express.js backend to Cloud Run on push to backend branch"
+github:
+  owner: thefinu
+  name: thefinuportal
+  push:
+    branch: "^backend$"
+filename: backend/cloudbuild.yaml
+includedFiles:
+  - "backend/**"
+ignoredFiles:
+  - "src/**"
+  - "public/**"
+  - "cloudbuild.yaml"
+  - "cloudbuild-triggers/**"
+substitutions:
+  _REGION: europe-west1
+  _REPOSITORY: thefinuportal
+  _SERVICE_NAME: thefinuportal-backend

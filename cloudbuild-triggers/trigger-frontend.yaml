@@ -1,0 +1,25 @@
+name: deploy-frontend
+description: "Deploy Next.js frontend to Cloud Run on push to frontend branch"
+github:
+  owner: thefinu
+  name: thefinuportal
+  push:
+    branch: "^frontend$"
+filename: cloudbuild.yaml
+includedFiles:
+  - "src/**"
+  - "public/**"
+  - "Dockerfile"
+  - "package.json"
+  - "package-lock.json"
+  - "next.config.ts"
+  - "tsconfig.json"
+  - "postcss.config.mjs"
+  - "cloudbuild.yaml"
+ignoredFiles:
+  - "backend/**"
+  - "cloudbuild-triggers/**"
+substitutions:
+  _REGION: us-west2
+  _REPOSITORY: thefinuportal
+  _SERVICE_NAME: thefinuportal-frontend
