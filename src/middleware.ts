@@ -26,11 +26,19 @@ export function middleware(request: NextRequest) {
     const isAdminDomain = host.startsWith('admin.');
     const isAdminPath = matchesPath(pathname, ADMIN_PATHS);
     const isPublicOnlyPath = matchesPath(pathname, PUBLIC_ONLY_PATHS);
+    const adminToken = request.cookies.get('admin_token')?.value;
 
     if (isAdminDomain && pathname === '/') {
-        // admin.thefinu.com/ → admin.thefinu.com/dashboard
+        // admin.thefinu.com/ → dashboard if authenticated, login if not
         const url = request.nextUrl.clone();
-        url.pathname = '/dashboard';
+        url.pathname = adminToken ? '/dashboard' : '/login';
+        return NextResponse.redirect(url);
+    }
+
+    if (isAdminDomain && isAdminPath && !adminToken) {
+        // Block unauthenticated access to admin routes — redirect to login
+        const url = request.nextUrl.clone();
+        url.pathname = '/login';
         return NextResponse.redirect(url);
     }
 

@@ -34,6 +34,8 @@ export default function Sidebar() {
     const handleLogout = () => {
         localStorage.removeItem("token");
         localStorage.removeItem("admin");
+        // Clear the middleware auth cookie
+        document.cookie = "admin_token=; path=/; Max-Age=0; SameSite=Lax; Secure";
         router.push("/login");
     };
 

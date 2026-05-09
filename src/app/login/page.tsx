@@ -23,6 +23,8 @@ export default function LoginPage() {
             const res = await api.post("/auth/login", formData);
             localStorage.setItem("token", res.data.token);
             localStorage.setItem("admin", JSON.stringify(res.data.admin));
+            // Set cookie so middleware can protect admin routes server-side
+            document.cookie = `admin_token=${res.data.token}; path=/; SameSite=Lax; Secure; Max-Age=86400`;
             router.push("/dashboard");
         } catch (err: any) {
             setError(err.response?.data?.message || "Login failed. Please try again.");
