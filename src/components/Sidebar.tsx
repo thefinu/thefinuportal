@@ -8,7 +8,8 @@ import {
     Settings,
     Users,
     LogOut,
-    CreditCard
+    CreditCard,
+    FileText
 } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -22,6 +23,7 @@ const menuItems = [
     { name: "Users", href: "/users", icon: Users },
     { name: "Accounts", href: "/accounts", icon: Wallet },
     { name: "Subscriptions", href: "/subscriptions", icon: CreditCard },
+    { name: "CMS", href: "/cms", icon: FileText },
     { name: "Settings", href: "/settings", icon: Settings },
 ];
 

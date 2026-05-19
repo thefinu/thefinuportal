@@ -3,7 +3,21 @@ import PublicFooter from "@/components/PublicFooter";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
-export default function TermsPage() {
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+
+export default async function TermsPage() {
+    let termsData: { effectiveDate?: string; content?: string } = {};
+    try {
+        const res = await fetch(`${API_URL}/content/terms`, { cache: 'no-store' });
+        if (res.ok) {
+            const json = await res.json();
+            if (json.data) termsData = json.data;
+        }
+    } catch { /* use defaults */ }
+
+    const effectiveDate = termsData.effectiveDate || "October 25, 2025";
+    const customContent = termsData.content || null;
+
     return (
         <div className="min-h-screen bg-white font-sans">
             <PublicHeader />
@@ -16,8 +30,11 @@ export default function TermsPage() {
                     </Link>
 
                     <h1 className="text-3xl lg:text-4xl font-extrabold text-slate-900 mb-2">Terms of Service</h1>
-                    <p className="text-slate-500 mb-6 border-b border-slate-100 pb-6 text-sm">Effective Date: October 25, 2025</p>
+                    <p className="text-slate-500 mb-6 border-b border-slate-100 pb-6 text-sm">Effective Date: {effectiveDate}</p>
 
+                    {customContent ? (
+                        <div className="prose prose-slate max-w-none space-y-6 text-slate-700 leading-relaxed text-sm" dangerouslySetInnerHTML={{ __html: customContent }} />
+                    ) : (
                     <div className="prose prose-slate max-w-none space-y-6 text-slate-700 leading-relaxed text-sm">
                         <p>
                             These Terms of Service (the "Terms") are a legally binding agreement between you and ThefinU, LLC ("ThefinU," "we," "us," and "our") and govern your access to and use of our website located at <a href="https://www.thefinu.com" className="text-secondary font-medium hover:underline">www.thefinu.com</a> and the related personal finance synchronization services, including any spreadsheet Add-ons or Add-ins, offered via the Google Workspace Marketplace (collectively, the "Services").
@@ -134,6 +151,7 @@ export default function TermsPage() {
                             </div>
                         </section>
                     </div>
+                    )}
                 </div>
             </main>
 

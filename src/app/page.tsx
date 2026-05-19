@@ -35,7 +35,6 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 
-const INSTALL_LINK = "https://workspace.google.com/marketplace/app/thefinu/123456789";
 
 function useReveal() {
     const ref = useRef<HTMLDivElement>(null);
@@ -100,35 +99,6 @@ function FAQItem({ q, a }: { q: string; a: string }) {
     );
 }
 
-const STEPS = [
-    {
-        title: "Link your accounts",
-        desc: "Securely connect your bank accounts, credit cards, investments, and loans through Plaid — the same infrastructure trusted by Venmo and Robinhood.",
-        icon: CreditCard,
-        iconColor: "text-blue-500",
-        iconBg: "bg-blue-50",
-        points: ["Connect with 12,000+ banks via Plaid", "Link checking, savings, cards, investments", "Get transaction history imported instantly"],
-        screenshot: "/steps/step-1-link-accounts.png",
-    },
-    {
-        title: "Get automatic updates",
-        desc: "Your transactions, balances, and account details sync automatically per day — completely hands-free, zero manual entry.",
-        icon: RefreshCw,
-        iconColor: "text-emerald-500",
-        iconBg: "bg-emerald-50",
-        points: ["Multiple daily updates — completely hands-free", "Transactions and balances always current", "Never manually enter data again"],
-        screenshot: "/steps/step-2-auto-sync.png",
-    },
-    {
-        title: "Make reports",
-        desc: "Start with ready-made budget templates, then prepare the transactions sheets. Generate the reports monthly and yearly basis.",
-        icon: TrendingUp,
-        iconColor: "text-violet-500",
-        iconBg: "bg-violet-50",
-        points: ["Premade templates", "Generate budgets, net worth trends, and spending breakdowns"],
-        screenshot: "/steps/step-3-customize.png",
-    },
-];
 
 function StepScreenshot({ src, alt }: { src: string; alt: string }) {
     const [failed, setFailed] = useState(false);
@@ -155,69 +125,53 @@ function StepScreenshot({ src, alt }: { src: string; alt: string }) {
     );
 }
 
-function HowItWorksSection({ sectionRef }: { sectionRef: React.RefObject<HTMLDivElement | null> }) {
+function HowItWorksSection({ sectionRef, steps }: { sectionRef: React.RefObject<HTMLDivElement | null>; steps: typeof DEFAULT_STEPS_CMS }) {
     const [activeStep, setActiveStep] = useState(0);
-    const step = STEPS[activeStep];
+    const merged = steps.items.map((item, i) => ({ ...STEP_META[i % STEP_META.length], ...item }));
+    const step = merged[activeStep] || merged[0];
 
     return (
         <section id="how-it-works" className="py-20 bg-slate-50" ref={sectionRef}>
             <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="text-center mb-14 reveal">
                     <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">How It Works</span>
-                    <h2 className="text-2xl md:text-3xl font-bold text-slate-950 mt-2 mb-3">Three simple steps</h2>
-                    <p className="text-slate-400 max-w-md mx-auto text-sm">Get started with automated finance tracking in minutes.</p>
+                    <h2 className="text-2xl md:text-3xl font-bold text-slate-950 mt-2 mb-3">{steps.sectionHeading}</h2>
+                    <p className="text-slate-400 max-w-md mx-auto text-sm">{steps.sectionSubheading}</p>
                 </div>
 
                 <div className="reveal">
                     <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-sm">
-                        {/* Step tabs integrated into the card */}
                         <div className="grid grid-cols-3 border-b border-slate-100">
-                            {STEPS.map((s, i) => {
+                            {merged.map((s, i) => {
                                 const isActive = activeStep === i;
                                 return (
-                                    <button
-                                        key={i}
-                                        onClick={() => setActiveStep(i)}
-                                        className={`relative flex items-center gap-3 md:gap-4 px-4 py-5 md:px-6 md:py-6 transition-all duration-300 cursor-pointer ${i < 2 ? 'border-r border-slate-100' : ''} ${isActive ? 'bg-white' : 'bg-slate-50/80 hover:bg-slate-50'}`}
-                                    >
-                                        {/* Active indicator — bottom bar */}
+                                    <button key={i} onClick={() => setActiveStep(i)}
+                                        className={`relative flex items-center gap-3 md:gap-4 px-4 py-5 md:px-6 md:py-6 transition-all duration-300 cursor-pointer ${i < merged.length - 1 ? 'border-r border-slate-100' : ''} ${isActive ? 'bg-white' : 'bg-slate-50/80 hover:bg-slate-50'}`}>
                                         <div className={`absolute bottom-0 left-0 right-0 h-[2px] transition-all duration-300 ${isActive ? 'bg-primary' : 'bg-transparent'}`} />
-
                                         <span className={`w-8 h-8 md:w-9 md:h-9 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 transition-all duration-300 ${isActive ? 'bg-primary text-white' : 'bg-slate-200/70 text-slate-400'}`}>
                                             {i + 1}
                                         </span>
                                         <div className="hidden sm:block text-left min-w-0">
                                             <p className={`text-[10px] uppercase tracking-wider font-semibold transition-colors duration-300 ${isActive ? 'text-primary' : 'text-slate-300'}`}>Step {i + 1}</p>
-                                            <h4 className={`text-sm font-bold truncate transition-colors duration-300 ${isActive ? 'text-slate-900' : 'text-slate-400'}`}>
-                                                {s.title}
-                                            </h4>
+                                            <h4 className={`text-sm font-bold truncate transition-colors duration-300 ${isActive ? 'text-slate-900' : 'text-slate-400'}`}>{s.title}</h4>
                                         </div>
-                                        {/* Mobile: show title below number */}
-                                        <span className={`sm:hidden text-xs font-bold transition-colors duration-300 ${isActive ? 'text-slate-900' : 'text-slate-400'}`}>
-                                            {s.title}
-                                        </span>
+                                        <span className={`sm:hidden text-xs font-bold transition-colors duration-300 ${isActive ? 'text-slate-900' : 'text-slate-400'}`}>{s.title}</span>
                                     </button>
                                 );
                             })}
                         </div>
 
-                        {/* Active step content */}
                         <div className="grid md:grid-cols-2">
-                            {/* Screenshot area */}
                             <div className="bg-slate-50/50 p-6 md:p-10 flex items-center justify-center min-h-[280px] md:min-h-[400px] border-b md:border-b-0 md:border-r border-slate-100">
                                 <StepScreenshot key={activeStep} src={step.screenshot} alt={step.title} />
                             </div>
-
-                            {/* Step details */}
                             <div className="p-6 md:p-10 flex flex-col justify-center">
                                 <div className="flex items-center gap-3 mb-5">
                                     <div className={`w-10 h-10 rounded-xl ${step.iconBg} flex items-center justify-center`}>
                                         <step.icon className={`h-5 w-5 ${step.iconColor}`} />
                                     </div>
                                     <div className="h-px flex-1 bg-slate-100" />
-                                    <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-widest">
-                                        {activeStep + 1} / 3
-                                    </span>
+                                    <span className="text-[10px] font-semibold text-slate-300 uppercase tracking-widest">{activeStep + 1} / {merged.length}</span>
                                 </div>
                                 <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-3">{step.title}</h3>
                                 <p className="text-sm text-slate-400 leading-relaxed mb-7">{step.desc}</p>
@@ -243,9 +197,110 @@ const bankRows = [
     ["Fidelity", "Vanguard", "USAA", "Navy Federal", "SoFi", "Marcus", "Robinhood", "Coinbase", "PayPal", "Venmo", "Chime", "Wealthfront"]
 ];
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+
+const DEFAULT_HERO = {
+    headline: "Automate Your Finances",
+    headlineHighlight: "Google Sheets",
+    subheading: "ThefinU syncs your bank transactions, balances, and investments directly into Google Sheets — track your finances with zero effort.",
+};
+const DEFAULT_FEATURES = {
+    sectionHeading: "Everything you need to manage money",
+    sectionSubheading: "Finance app power meets spreadsheet flexibility.",
+    items: [
+        { title: "Automatic daily syncs", desc: "Transactions, balances, and accounts sync per day. No CSV imports needed." },
+        { title: "Ready-made templates", desc: "Budget trackers, net worth dashboards, expense reports — pro templates out of the box." },
+        { title: "Multi-account support", desc: "Banks, credit cards, investments, loans, crypto — all visible in one spreadsheet." },
+        { title: "Smart categorization", desc: "Categories help classify transactions, making it easier to see where your money goes." },
+        { title: "Budget reports", desc: "Generate monthly and yearly budgets, net worth trends, and spending breakdowns — all from your account transactions." },
+        { title: "Works on any device", desc: "Desktop, tablet, or phone — Google Sheets works seamlessly everywhere." },
+    ],
+};
+const DEFAULT_STEPS_CMS = {
+    sectionHeading: "Three simple steps",
+    sectionSubheading: "Get started with automated finance tracking in minutes.",
+    items: [
+        { title: "Link your accounts", desc: "Securely connect your bank accounts, credit cards, investments, and loans through Plaid — the same infrastructure trusted by Venmo and Robinhood.", points: ["Connect with 12,000+ banks via Plaid", "Link checking, savings, cards, investments", "Get transaction history imported instantly"] },
+        { title: "Get automatic updates", desc: "Your transactions, balances, and account details sync automatically per day — completely hands-free, zero manual entry.", points: ["Multiple daily updates — completely hands-free", "Transactions and balances always current", "Never manually enter data again"] },
+        { title: "Make reports", desc: "Start with ready-made budget templates, then prepare the transactions sheets. Generate the reports monthly and yearly basis.", points: ["Premade templates", "Generate budgets, net worth trends, and spending breakdowns"] },
+    ],
+};
+const DEFAULT_PRICING = {
+    sectionHeading: "Simple, transparent pricing",
+    sectionSubheading: "One plan. Everything included.",
+    price: "$29",
+    period: "/ year",
+    monthlyEquiv: "$2.42/month",
+    features: ["Unlimited bank connections", "Multiple daily auto-syncs", "Full transaction history", "Free templates", "Smart categorization", "Priority support", "14-day free trial"],
+    whyItems: [
+        { title: "Save 30+ hours/year", desc: "No more manual data entry or CSV exports." },
+        { title: "Cheaper than alternatives", desc: "YNAB: $99/yr. Copilot: $96/yr. ThefinU: $29/yr." },
+        { title: "Better awareness", desc: "Tracking spending reduces expenses by 15%." },
+        { title: "Share with partner", desc: "Collaborate using Google Sheets sharing." },
+    ],
+};
+const DEFAULT_FAQ = [
+    { q: "How does ThefinU connect to my bank?", a: "Via Plaid — the same service used by Venmo, Robinhood, and thousands of apps. Your credentials go directly to Plaid; we never see them." },
+    { q: "Is my financial data secure?", a: "Yes. 256-bit encryption, read-only access only. We can never initiate transactions or move your money." },
+    { q: "What banks are supported?", a: "Over 12,000 institutions across 50+ countries — Chase, BofA, Wells Fargo, Fidelity, Vanguard, and many more." },
+    { q: "How often does data sync?", a: "Multiple times per day automatically. New transactions typically appear within hours of posting." },
+    { q: "Can I cancel anytime?", a: "Absolutely. Cancel from settings anytime. Your spreadsheet stays yours — it's a regular Google Sheet." },
+    { q: "Do I need advanced spreadsheet skills?", a: "Not at all! Templates work out of the box. Power users can customize everything." },
+];
+const DEFAULT_CTA = {
+    heading: "Ready to take control of your finances?",
+    subheading: "Join thousands managing money smarter with ThefinU and Google Sheets.",
+};
+const DEFAULT_INSTALL_BTN = {
+    label: "Install on Google Sheets",
+    url: "https://workspace.google.com/marketplace/app/thefinu/123456789",
+};
+
+// Feature icons are fixed design elements; only text comes from CMS
+const FEATURE_ICONS = [
+    { icon: RefreshCw, color: "text-emerald-500" },
+    { icon: Layers, color: "text-violet-500" },
+    { icon: CreditCard, color: "text-rose-500" },
+    { icon: BarChart3, color: "text-amber-500" },
+    { icon: FileSpreadsheet, color: "text-blue-500" },
+    { icon: Smartphone, color: "text-cyan-500" },
+];
+// Step icons/screenshots are fixed design elements; only text comes from CMS
+const STEP_META = [
+    { icon: CreditCard, iconColor: "text-blue-500", iconBg: "bg-blue-50", screenshot: "/steps/step-1-link-accounts.png" },
+    { icon: RefreshCw, iconColor: "text-emerald-500", iconBg: "bg-emerald-50", screenshot: "/steps/step-2-auto-sync.png" },
+    { icon: TrendingUp, iconColor: "text-violet-500", iconBg: "bg-violet-50", screenshot: "/steps/step-3-customize.png" },
+];
+// Why items icons are fixed
+const WHY_ICONS = [
+    { icon: Clock, color: "text-blue-500" },
+    { icon: CircleDollarSign, color: "text-emerald-500" },
+    { icon: LineChart, color: "text-amber-500" },
+    { icon: Users, color: "text-violet-500" },
+];
+
 export default function HomePage() {
     const [isVisible, setIsVisible] = useState(false);
-    useEffect(() => { setIsVisible(true); }, []);
+    const [hero, setHero] = useState(DEFAULT_HERO);
+    const [features, setFeatures] = useState(DEFAULT_FEATURES);
+    const [stepsCms, setStepsCms] = useState(DEFAULT_STEPS_CMS);
+    const [pricing, setPricing] = useState(DEFAULT_PRICING);
+    const [faqItems, setFaqItems] = useState(DEFAULT_FAQ);
+    const [cta, setCta] = useState(DEFAULT_CTA);
+    const [installBtn, setInstallBtn] = useState(DEFAULT_INSTALL_BTN);
+
+    useEffect(() => {
+        setIsVisible(true);
+        const load = (section: string, setter: (d: any) => void) =>
+            fetch(`${API_URL}/content/${section}`).then(r => r.json()).then(({ data }) => { if (data) setter(data); }).catch(() => {});
+        load("home_hero", setHero);
+        load("home_features", setFeatures);
+        load("home_steps", setStepsCms);
+        load("home_pricing", setPricing);
+        load("home_faq", setFaqItems);
+        load("home_cta", setCta);
+        load("home_install", setInstallBtn);
+    }, []);
 
     const statsRef = useReveal();
     const featuresRef = useReveal();
@@ -274,19 +329,19 @@ export default function HomePage() {
                             </div>
 
                             <h1 className={`text-4xl md:text-5xl lg:text-[3.5rem] font-bold tracking-tight text-slate-950 mb-6 leading-[1.1] transition-all duration-1000 delay-100 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
-                                Automate Your Finances
+                                {hero.headline}
                                 <br className="hidden md:block" />
-                                in <span className="text-primary">Google Sheets</span>
+                                in <span className="text-primary">{hero.headlineHighlight}</span>
                             </h1>
 
                             <p className={`text-base md:text-lg text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed transition-all duration-1000 delay-300 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
-                                ThefinU syncs your bank transactions, balances, and investments directly into Google Sheets — track your finances with zero effort.
+                                {hero.subheading}
                             </p>
 
                             <div className={`flex flex-col sm:flex-row items-center justify-center gap-4 transition-all duration-1000 delay-500 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
-                                <a href={INSTALL_LINK} target="_blank" rel="noopener noreferrer"
+                                <a href={installBtn.url} target="_blank" rel="noopener noreferrer"
                                     className="group w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white px-8 py-3.5 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer">
-                                    Install on Google Sheets
+                                    {installBtn.label}
                                     <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
                                 </a>
                             </div>
@@ -353,25 +408,21 @@ export default function HomePage() {
                     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="text-center mb-14 reveal">
                             <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Features</span>
-                            <h2 className="text-2xl md:text-3xl font-bold text-slate-950 mt-2 mb-3">Everything you need to manage money</h2>
-                            <p className="text-slate-400 max-w-md mx-auto text-sm">Finance app power meets spreadsheet flexibility.</p>
+                            <h2 className="text-2xl md:text-3xl font-bold text-slate-950 mt-2 mb-3">{features.sectionHeading}</h2>
+                            <p className="text-slate-400 max-w-md mx-auto text-sm">{features.sectionSubheading}</p>
                         </div>
 
                         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {[
-                                { title: "Automatic daily syncs", desc: "Transactions, balances, and accounts sync per day. No CSV imports needed.", icon: RefreshCw, color: "text-emerald-500" },
-                                { title: "Ready-made templates", desc: "Budget trackers, net worth dashboards, expense reports — pro templates out of the box.", icon: Layers, color: "text-violet-500" },
-                                { title: "Multi-account support", desc: "Banks, credit cards, investments, loans, crypto — all visible in one spreadsheet.", icon: CreditCard, color: "text-rose-500" },
-                                { title: "Smart categorization", desc: "Categories help classify transactions, making it easier to see where your money goes.", icon: BarChart3, color: "text-amber-500" },
-                                { title: "Budget reports", desc: "Generate monthly and yearly budgets, net worth trends, and spending breakdowns — all from your account transactions.", icon: FileSpreadsheet, color: "text-blue-500" },
-                                { title: "Works on any device", desc: "Desktop, tablet, or phone — Google Sheets works seamlessly everywhere.", icon: Smartphone, color: "text-cyan-500" }
-                            ].map((item, i) => (
-                                <div key={i} className={`reveal reveal-delay-${(i % 3) + 1} group p-6 rounded-xl border border-slate-100 hover:border-slate-200 transition-all duration-300`}>
-                                    <item.icon className={`h-5 w-5 ${item.color} mb-4`} />
-                                    <h4 className="text-sm font-bold text-slate-900 mb-1.5">{item.title}</h4>
-                                    <p className="text-slate-400 leading-relaxed text-sm">{item.desc}</p>
-                                </div>
-                            ))}
+                            {features.items.map((item, i) => {
+                                const meta = FEATURE_ICONS[i % FEATURE_ICONS.length];
+                                return (
+                                    <div key={i} className={`reveal reveal-delay-${(i % 3) + 1} group p-6 rounded-xl border border-slate-100 hover:border-slate-200 transition-all duration-300`}>
+                                        <meta.icon className={`h-5 w-5 ${meta.color} mb-4`} />
+                                        <h4 className="text-sm font-bold text-slate-900 mb-1.5">{item.title}</h4>
+                                        <p className="text-slate-400 leading-relaxed text-sm">{item.desc}</p>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </section>
@@ -379,7 +430,7 @@ export default function HomePage() {
                 <div className="max-w-5xl mx-auto px-8"><div className="h-px bg-slate-100" /></div>
 
                 {/* ── HOW IT WORKS ── */}
-                <HowItWorksSection sectionRef={howRef} />
+                <HowItWorksSection sectionRef={howRef} steps={stepsCms} />
 
                 <div className="max-w-5xl mx-auto px-8"><div className="h-px bg-slate-100" /></div>
 
@@ -446,8 +497,8 @@ export default function HomePage() {
                     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="text-center mb-14 reveal">
                             <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Pricing</span>
-                            <h2 className="text-2xl md:text-3xl font-bold text-slate-950 mt-2 mb-3">Simple, transparent pricing</h2>
-                            <p className="text-slate-400 text-sm">One plan. Everything included.</p>
+                            <h2 className="text-2xl md:text-3xl font-bold text-slate-950 mt-2 mb-3">{pricing.sectionHeading}</h2>
+                            <p className="text-slate-400 text-sm">{pricing.sectionSubheading}</p>
                         </div>
 
                         <div className="reveal max-w-4xl mx-auto">
@@ -460,22 +511,22 @@ export default function HomePage() {
                                             <span className="text-[10px] font-semibold text-white bg-slate-900 px-2.5 py-0.5 rounded-full uppercase tracking-wider">Best value</span>
                                         </div>
                                         <div className="flex items-end gap-1.5 mb-1">
-                                            <span className="text-5xl font-bold text-slate-950">$29</span>
-                                            <span className="text-base text-slate-400 pb-1.5">/ year</span>
+                                            <span className="text-5xl font-bold text-slate-950">{pricing.price}</span>
+                                            <span className="text-base text-slate-400 pb-1.5">{pricing.period}</span>
                                         </div>
-                                        <p className="text-sm text-slate-400 mb-8">That&apos;s just <span className="font-semibold text-primary">$2.42/month</span> — less than a coffee</p>
+                                        <p className="text-sm text-slate-400 mb-8">That&apos;s just <span className="font-semibold text-primary">{pricing.monthlyEquiv}</span> — less than a coffee</p>
 
                                         <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3 mb-8">
-                                            {["Unlimited bank connections", "Multiple daily auto-syncs", "Full transaction history", "Free templates", "Smart categorization", "Priority support", "14-day free trial"].map((f, i) => (
+                                            {pricing.features.map((f, i) => (
                                                 <div key={i} className="flex items-center gap-2 text-sm text-slate-600">
                                                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />{f}
                                                 </div>
                                             ))}
                                         </div>
 
-                                        <a href={INSTALL_LINK} target="_blank" rel="noopener noreferrer"
+                                        <a href={installBtn.url} target="_blank" rel="noopener noreferrer"
                                             className="group inline-flex bg-slate-900 hover:bg-slate-800 text-white px-8 py-3.5 rounded-lg text-sm font-semibold transition-all duration-200 items-center gap-2 active:scale-[0.98] cursor-pointer">
-                                            Install on Google Sheets <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
+                                            {installBtn.label} <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
                                         </a>
                                     </div>
 
@@ -484,20 +535,18 @@ export default function HomePage() {
                                         <h3 className="text-sm font-bold text-slate-900 mb-2">Why it&apos;s worth it</h3>
                                         <p className="text-xs text-slate-400 leading-relaxed mb-6">Most people spend 2-4 hours/month manually tracking finances. ThefinU saves all that.</p>
                                         <div className="space-y-5">
-                                            {[
-                                                { icon: Clock, title: "Save 30+ hours/year", desc: "No more manual data entry or CSV exports.", color: "text-blue-500" },
-                                                { icon: CircleDollarSign, title: "Cheaper than alternatives", desc: "YNAB: $99/yr. Copilot: $96/yr. ThefinU: $29/yr.", color: "text-emerald-500" },
-                                                { icon: LineChart, title: "Better awareness", desc: "Tracking spending reduces expenses by 15%.", color: "text-amber-500" },
-                                                { icon: Users, title: "Share with partner", desc: "Collaborate using Google Sheets sharing.", color: "text-violet-500" },
-                                            ].map((item, i) => (
-                                                <div key={i} className="flex gap-3">
-                                                    <item.icon className={`h-4 w-4 ${item.color} shrink-0 mt-0.5`} />
-                                                    <div>
-                                                        <div className="text-sm font-semibold text-slate-800">{item.title}</div>
-                                                        <div className="text-xs text-slate-400 mt-0.5">{item.desc}</div>
+                                            {pricing.whyItems.map((item, i) => {
+                                                const meta = WHY_ICONS[i % WHY_ICONS.length];
+                                                return (
+                                                    <div key={i} className="flex gap-3">
+                                                        <meta.icon className={`h-4 w-4 ${meta.color} shrink-0 mt-0.5`} />
+                                                        <div>
+                                                            <div className="text-sm font-semibold text-slate-800">{item.title}</div>
+                                                            <div className="text-xs text-slate-400 mt-0.5">{item.desc}</div>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 </div>
@@ -517,14 +566,7 @@ export default function HomePage() {
                             <p className="text-slate-400 text-sm">Everything you need to know.</p>
                         </div>
                         <div className="reveal">
-                            {[
-                                { q: "How does ThefinU connect to my bank?", a: "Via Plaid — the same service used by Venmo, Robinhood, and thousands of apps. Your credentials go directly to Plaid; we never see them." },
-                                { q: "Is my financial data secure?", a: "Yes. 256-bit encryption, read-only access only. We can never initiate transactions or move your money." },
-                                { q: "What banks are supported?", a: "Over 12,000 institutions across 50+ countries — Chase, BofA, Wells Fargo, Fidelity, Vanguard, and many more." },
-                                { q: "How often does data sync?", a: "Multiple times per day automatically. New transactions typically appear within hours of posting." },
-                                { q: "Can I cancel anytime?", a: "Absolutely. Cancel from settings anytime. Your spreadsheet stays yours — it's a regular Google Sheet." },
-                                { q: "Do I need advanced spreadsheet skills?", a: "Not at all! Templates work out of the box. Power users can customize everything." },
-                            ].map((item, i) => <FAQItem key={i} q={item.q} a={item.a} />)}
+                            {faqItems.map((item, i) => <FAQItem key={i} q={item.q} a={item.a} />)}
                         </div>
                     </div>
                 </section>
@@ -533,14 +575,14 @@ export default function HomePage() {
                 <section className="py-20 bg-slate-950">
                     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
                         <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-                            Ready to take control of your finances?
+                            {cta.heading}
                         </h2>
                         <p className="text-sm text-slate-400 mb-8 max-w-lg mx-auto">
-                            Join thousands managing money smarter with ThefinU and Google Sheets.
+                            {cta.subheading}
                         </p>
-                        <a href={INSTALL_LINK} target="_blank" rel="noopener noreferrer"
+                        <a href={installBtn.url} target="_blank" rel="noopener noreferrer"
                             className="group inline-flex bg-white text-slate-900 px-8 py-3.5 rounded-lg text-sm font-semibold hover:bg-slate-100 active:scale-[0.98] transition-all duration-200 items-center gap-2 cursor-pointer">
-                            Install on Google Sheets <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
+                            {installBtn.label} <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
                         </a>
                         <div className="mt-6 flex items-center justify-center gap-6 text-xs text-slate-500">
                             <span className="flex items-center gap-1.5"><BadgeCheck className="h-3.5 w-3.5 text-emerald-400" /> Free trial</span>

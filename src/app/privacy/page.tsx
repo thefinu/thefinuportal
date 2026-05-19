@@ -1,9 +1,23 @@
 import PublicHeader from "@/components/PublicHeader";
 import PublicFooter from "@/components/PublicFooter";
 import Link from "next/link";
-import { ArrowLeft, Shield } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
-export default function PrivacyPage() {
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+
+export default async function PrivacyPage() {
+    let privacyData: { updatedDate?: string; content?: string } = {};
+    try {
+        const res = await fetch(`${API_URL}/content/privacy`, { cache: 'no-store' });
+        if (res.ok) {
+            const json = await res.json();
+            if (json.data) privacyData = json.data;
+        }
+    } catch { /* use defaults */ }
+
+    const updatedDate = privacyData.updatedDate || "September 2023";
+    const customContent = privacyData.content || null;
+
     return (
         <div className="min-h-screen bg-white font-sans">
             <PublicHeader />
@@ -16,8 +30,11 @@ export default function PrivacyPage() {
                     </Link>
 
                     <h1 className="text-3xl lg:text-4xl font-extrabold text-slate-900 mb-2">Privacy Policy</h1>
-                    <p className="text-slate-500 mb-6 border-b border-slate-100 pb-6 text-sm">Updated September 2023</p>
+                    <p className="text-slate-500 mb-6 border-b border-slate-100 pb-6 text-sm">Updated {updatedDate}</p>
 
+                    {customContent ? (
+                        <div className="prose prose-slate max-w-none space-y-6 text-slate-700 leading-relaxed text-sm" dangerouslySetInnerHTML={{ __html: customContent }} />
+                    ) : (
                     <div className="prose prose-slate max-w-none space-y-6 text-slate-700 leading-relaxed text-sm">
                         <p className="text-sm text-slate-600 leading-relaxed">
                             ThefinU, LLC. (“ThefinU”, “Us”, “We” or “Our”) is committed to protecting your privacy. This Privacy Policy is intended to describe for you, as an individual who is a user of thefinu.com or our services, the information we collect, how that information may be used, with whom it may be shared, and your choices about such uses and disclosures. We encourage you to read this Privacy Policy carefully when using our website or services or transacting business with us. By using our website, you are accepting the practices described in this Privacy Policy. If you have any questions about our privacy practices, please refer to the end of this Privacy Policy for information on how to contact us.
@@ -127,6 +144,7 @@ export default function PrivacyPage() {
                         </section>
 
                     </div>
+                    )}
                 </div>
             </main>
 

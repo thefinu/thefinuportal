@@ -43,9 +43,20 @@ function validateEmail(email: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+
 export default function ContactPage() {
     const [isVisible, setIsVisible] = useState(false);
-    useEffect(() => { setIsVisible(true); }, []);
+    const [contactInfo, setContactInfo] = useState({
+        email: "support@thefinu.com",
+        location: "Denver, Colorado",
+        responseTime: "Within 24 hours",
+    });
+
+    useEffect(() => {
+        setIsVisible(true);
+        fetch(`${API_URL}/content/contact_info`).then(r => r.json()).then(({ data }) => { if (data) setContactInfo(data); }).catch(() => {});
+    }, []);
 
     const formsRef = useReveal();
     const infoRef = useReveal();
@@ -193,22 +204,22 @@ export default function ContactPage() {
                                             {
                                                 icon: Mail,
                                                 label: "Email us",
-                                                value: "support@thefinu.com",
-                                                href: "mailto:support@thefinu.com",
+                                                value: contactInfo.email,
+                                                href: `mailto:${contactInfo.email}`,
                                                 iconBg: "bg-primary/5",
                                                 iconColor: "text-primary"
                                             },
                                             {
                                                 icon: MapPin,
                                                 label: "Location",
-                                                value: "Denver, Colorado",
+                                                value: contactInfo.location,
                                                 iconBg: "bg-blue-50",
                                                 iconColor: "text-blue-500"
                                             },
                                             {
                                                 icon: Clock,
                                                 label: "Response time",
-                                                value: "Within 24 hours",
+                                                value: contactInfo.responseTime,
                                                 iconBg: "bg-emerald-50",
                                                 iconColor: "text-emerald-500"
                                             },
