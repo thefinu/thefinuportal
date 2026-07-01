@@ -14,6 +14,7 @@ import dashboardRoutes from './routes/dashboardRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
 import plaidRoutes from './routes/plaidRoutes.js';
 import contentRoutes from './routes/contentRoutes.js';
+import planRoutes from './routes/planRoutes.js';
 
 console.log('Starting server...');
 dotenv.config();
@@ -63,6 +64,7 @@ apiRouter.use('/dashboard', dashboardRoutes);
 apiRouter.use('/contact', contactRoutes);
 apiRouter.use('/plaid', plaidRoutes);
 apiRouter.use('/content', contentRoutes);
+apiRouter.use('/plans', planRoutes);
 
 app.get('/', (req, res) => {
     res.send('Financial Portal API is running');

@@ -19,12 +19,13 @@ router.post('/:section', auth, async (req, res) => {
         if (data === undefined || data === null) {
             return res.status(400).json({ message: 'data is required' });
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const content = await Content.findOneAndUpdate(
-            { section: req.params.section },
-            { section: req.params.section, data },
+            { section: req.params.section } as any,
+            { $set: { data }, $setOnInsert: { section: req.params.section } },
             { upsert: true, new: true, setDefaultsOnInsert: true }
-        );
-        res.json({ status: 'success', data: content.data });
+        ).lean<{ data: unknown } | null>();
+        res.json({ status: 'success', data: content?.data });
     } catch (err: any) {
         console.error('CMS content save error:', err);
         res.status(500).json({ message: err.message || 'Internal server error' });

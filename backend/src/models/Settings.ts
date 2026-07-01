@@ -5,14 +5,13 @@ export interface ISettings extends Document {
     plaidSecretKey: string;
     plaidEnvironment: 'sandbox' | 'production';
     spreadsheetTemplateUrl: string;
+    pickerApiKey: string;
     appInstruction: string;
     notificationEmail: string;
     appEmail: string;
     stripePublicKey: string;
     stripeSecretKey: string;
     stripePaymentMode: 'sandbox' | 'production';
-    stripePriceId: string;
-    stripeTrialDays: number;
     stripeWebhookSecret: string;
     plaidWebhookUrl: string;
     smtpHost: string;
@@ -28,14 +27,13 @@ const SettingsSchema: Schema = new Schema({
     plaidEnvironment: { type: String, enum: ['sandbox', 'production'], default: 'sandbox' },
     plaidWebhookUrl: { type: String, default: '' },
     spreadsheetTemplateUrl: { type: String, default: '' },
+    pickerApiKey: { type: String, default: '' },
     appInstruction: { type: String, default: '' },
     notificationEmail: { type: String, default: '' },
     appEmail: { type: String, default: '' },
     stripePublicKey: { type: String, default: '' },
     stripeSecretKey: { type: String, default: '' },
     stripePaymentMode: { type: String, enum: ['sandbox', 'production'], default: 'sandbox' },
-    stripePriceId: { type: String, default: '' },
-    stripeTrialDays: { type: Number, default: 14 },
     stripeWebhookSecret: { type: String, default: '' },
     smtpHost: { type: String, default: 'smtp.gmail.com' },
     smtpPort: { type: Number, default: 587 },

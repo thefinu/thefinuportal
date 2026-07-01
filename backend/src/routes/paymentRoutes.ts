@@ -4,21 +4,45 @@ import Settings from '../models/Settings.js';
 import User from '../models/User.js';
 import Subscription from '../models/Subscription.js';
 import Account from '../models/Account.js';
+import Transaction from '../models/Transaction.js';
+import UserSpreadsheet from '../models/UserSpreadsheet.js';
+import Plan from '../models/Plan.js';
 import { gasAuth, type GasAuthRequest } from '../middleware/gasAuthMiddleware.js';
 import { refundSubscription } from '../utils/stripeRefund.js';
+import { getStripe } from '../utils/stripeClient.js';
 
 const router = express.Router();
 
-// Helper to get Stripe instance
-const getStripe = async () => {
-    const settings = await Settings.findOne();
-    if (!settings || !settings.stripeSecretKey) {
-        throw new Error('Stripe is not configured');
+/**
+ * Resolve the Stripe Price ID to charge from a plan + interval selection.
+ * Returns the price id and the plan's trial days.
+ */
+async function resolvePrice(
+    planId: string | undefined,
+    interval: string | undefined,
+): Promise<{ priceId: string; trialDays: number | null }> {
+    if (!planId) {
+        throw new Error('A plan must be selected for checkout');
     }
-    return new Stripe(settings.stripeSecretKey, {
-        apiVersion: '2024-12-18.acacia' as any, // Use latest or compatible API version
-    });
-};
+    const plan = await Plan.findById(planId);
+    if (!plan || !plan.active) {
+        throw new Error('Selected plan is not available');
+    }
+    const isYearly = interval === 'yearly';
+    const regularAmount = isYearly ? plan.yearlyAmount : plan.monthlyAmount;
+    const regularPriceId = isYearly ? plan.yearlyPriceId : plan.monthlyPriceId;
+    const saleAmount = isYearly ? plan.saleYearlyAmount : plan.saleMonthlyAmount;
+    const salePriceId = isYearly ? plan.saleYearlyPriceId : plan.saleMonthlyPriceId;
+
+    // Charge the sale price when a valid sale is active for this interval
+    const onSale = saleAmount > 0 && saleAmount < regularAmount && !!salePriceId;
+    const priceId = onSale ? salePriceId : regularPriceId;
+
+    if (!priceId) {
+        throw new Error(`This plan does not offer ${isYearly ? 'yearly' : 'monthly'} billing`);
+    }
+    return { priceId, trialDays: plan.trialDays };
+}
 
 /**
  * @route   POST /api/payment/create-checkout-session
@@ -26,7 +50,7 @@ const getStripe = async () => {
  */
 router.post('/create-checkout-session', gasAuth, async (req: GasAuthRequest, res) => {
     try {
-        const { email, spreadsheetId } = req.body;
+        const { email, spreadsheetId, planId, interval } = req.body;
         const userEmail = email || req.gasUser?.email;
 
         if (!userEmail) {
@@ -38,16 +62,13 @@ router.post('/create-checkout-session', gasAuth, async (req: GasAuthRequest, res
             return res.status(500).json({ message: 'Stripe is not configured' });
         }
 
-        if (!settings.stripePriceId) {
-            return res.status(500).json({ message: 'Stripe Price ID is not configured in settings' });
-        }
+        const stripe = await getStripe();
 
-        const stripe = new Stripe(settings.stripeSecretKey, {
-            apiVersion: '2024-12-18.acacia' as any,
-        });
+        // Resolve which price to charge from the selected plan + interval
+        const { priceId, trialDays: planTrialDays } = await resolvePrice(planId, interval);
 
         const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
-        const trialDays = settings.stripeTrialDays ?? 14;
+        const trialDays = planTrialDays ?? 14;
 
         const sessionParams: Stripe.Checkout.SessionCreateParams = {
             mode: 'subscription',
@@ -56,7 +77,7 @@ router.post('/create-checkout-session', gasAuth, async (req: GasAuthRequest, res
             cancel_url: `${baseUrl}/cancel?spreadsheet_id=${encodeURIComponent(spreadsheetId || '')}`,
             line_items: [
                 {
-                    price: settings.stripePriceId,
+                    price: priceId,
                     quantity: 1,
                 },
             ],
@@ -74,6 +95,51 @@ router.post('/create-checkout-session', gasAuth, async (req: GasAuthRequest, res
         res.json({ url: session.url });
     } catch (err: any) {
         console.error('Create checkout session error:', err);
+        res.status(500).json({ message: err.message || 'Failed to create checkout session' });
+    }
+});
+
+/**
+ * @route   POST /api/payment/create-website-checkout
+ * @desc    Create a Stripe checkout session initiated from the public website
+ *          pricing screen. Stripe collects the customer email. (No auth)
+ */
+router.post('/create-website-checkout', async (req, res) => {
+    try {
+        const { planId, interval } = req.body;
+
+        if (!planId) {
+            return res.status(400).json({ message: 'planId is required' });
+        }
+
+        const settings = await Settings.findOne();
+        if (!settings || !settings.stripeSecretKey) {
+            return res.status(500).json({ message: 'Stripe is not configured' });
+        }
+
+        const stripe = await getStripe();
+
+        const { priceId, trialDays: planTrialDays } = await resolvePrice(planId, interval);
+
+        const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
+        const trialDays = planTrialDays ?? 14;
+
+        const sessionParams: Stripe.Checkout.SessionCreateParams = {
+            mode: 'subscription',
+            success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${baseUrl}/cancel`,
+            line_items: [{ price: priceId, quantity: 1 }],
+        };
+
+        if (trialDays > 0) {
+            sessionParams.subscription_data = { trial_period_days: trialDays };
+        }
+
+        const session = await stripe.checkout.sessions.create(sessionParams);
+
+        res.json({ url: session.url });
+    } catch (err: any) {
+        console.error('Create website checkout error:', err);
         res.status(500).json({ message: err.message || 'Failed to create checkout session' });
     }
 });
@@ -201,7 +267,7 @@ router.post('/verify-session', async (req, res) => {
 
 /**
  * @route   POST /api/payment/unsubscribe
- * @desc    Refund and immediately cancel subscription
+ * @desc    Refund, cancel subscription, and delete all user data (unless free user)
  */
 router.post('/unsubscribe', gasAuth, async (req, res) => {
     try {
@@ -216,65 +282,116 @@ router.post('/unsubscribe', gasAuth, async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Find all subscriptions that are not canceled
-        const subscriptions = await Subscription.find({
-            userId: user._id,
-            status: { $nin: ['canceled', 'cancelled'] }
-        });
-
-        if (subscriptions.length === 0) {
-            user.isSubscribed = false;
-            await user.save();
-            return res.status(404).json({ message: 'No active subscriptions found for this user' });
+        // Free users keep all data — only cancel Stripe subscription
+        if (user.isFreeUser) {
+            return res.json({
+                status: 'success',
+                message: 'Free user — no subscription to cancel. Data retained.',
+            });
         }
 
+        // 1. Refund and cancel all Stripe subscriptions
+        const subscriptions = await Subscription.find({ userId: user._id });
         const stripe = await getStripe();
         const results: Array<Record<string, unknown>> = [];
 
         for (const sub of subscriptions) {
             try {
-                // Refund the latest payment
                 const refund = await refundSubscription(stripe, sub.stripeSubscriptionId);
-
-                // Immediately cancel the subscription
                 await stripe.subscriptions.cancel(sub.stripeSubscriptionId);
-
-                // Update local DB
-                sub.status = 'canceled';
-                sub.cancelAtPeriodEnd = false;
-                await sub.save();
-
                 results.push({
                     id: sub.stripeSubscriptionId,
                     status: 'canceled',
                     refunded: refund ? `${refund.amount / 100} ${refund.currency}` : 'no payment to refund',
                 });
             } catch (stripeErr: any) {
-                console.error(`Error canceling sub ${sub.stripeSubscriptionId}:`, stripeErr);
                 if (stripeErr.code === 'resource_missing' || (stripeErr.message && stripeErr.message.includes('No such subscription'))) {
-                    sub.status = 'canceled';
-                    sub.cancelAtPeriodEnd = false;
-                    await sub.save();
                     results.push({ id: sub.stripeSubscriptionId, status: 'canceled (already missing in Stripe)' });
                 } else {
+                    console.error(`Error canceling sub ${sub.stripeSubscriptionId}:`, stripeErr);
                     results.push({ id: sub.stripeSubscriptionId, error: stripeErr.message });
                 }
             }
         }
 
-        // Deactivate user
-        user.isSubscribed = false;
-        user.cancelAtPeriodEnd = false;
-        user.currentPeriodEnd = null;
-        await user.save();
+        // Delete Stripe customer if exists
+        const customerId = subscriptions[0]?.stripeCustomerId;
+        if (customerId) {
+            try {
+                await stripe.customers.del(customerId);
+            } catch (stripeErr: any) {
+                if (stripeErr.code !== 'resource_missing') {
+                    console.error(`Failed to delete Stripe customer ${customerId}:`, stripeErr.message);
+                }
+            }
+        }
 
-        // Deactivate accounts
-        await Account.updateMany({ user_id: user._id }, { isSubscribed: false });
+        // 2. Delete subscriptions from DB
+        await Subscription.deleteMany({ userId: user._id });
+
+        // 3. Remove Plaid items and delete accounts + transactions
+        const accounts = await Account.find({ user_id: user._id });
+        const accountIds = accounts.map(a => a._id);
+
+        if (accountIds.length > 0) {
+            await Transaction.deleteMany({ accountId: { $in: accountIds } });
+        }
+
+        if (accounts.length > 0) {
+            try {
+                const settings = await Settings.findOne();
+                if (settings?.plaidClientKey && settings?.plaidSecretKey) {
+                    const plaidBaseUrl = settings.plaidEnvironment === 'production'
+                        ? 'https://production.plaid.com'
+                        : 'https://sandbox.plaid.com';
+
+                    const uniqueTokens = [...new Set(
+                        accounts.map(a => a.access_token).filter(Boolean)
+                    )];
+
+                    for (const access_token of uniqueTokens) {
+                        try {
+                            const response = await fetch(`${plaidBaseUrl}/item/remove`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    client_id: settings.plaidClientKey,
+                                    secret: settings.plaidSecretKey,
+                                    access_token,
+                                }),
+                            });
+                            if (!response.ok) {
+                                const err = await response.json() as any;
+                                console.error(`Plaid item/remove failed: ${err?.error_message}`);
+                            }
+                        } catch (plaidErr: any) {
+                            console.error('Plaid item/remove error:', plaidErr.message);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Plaid cleanup error during unsubscribe:', err);
+            }
+        }
+
+        // 4. Delete accounts
+        await Account.deleteMany({ user_id: user._id });
+
+        // 5. Delete spreadsheet records
+        await UserSpreadsheet.deleteMany({ userId: user._id });
+
+        // 6. Delete the user
+        await User.findByIdAndDelete(user._id);
 
         res.json({
             status: 'success',
-            message: 'Subscription canceled and refunded successfully',
+            message: 'Subscription canceled, refunded, and all user data deleted',
             results: results,
+            deleted: {
+                subscriptions: subscriptions.length,
+                accounts: accounts.length,
+                transactions: accountIds.length > 0 ? 'cleared' : 'none',
+            }
         });
 
     } catch (err: any) {
@@ -342,7 +459,7 @@ router.post('/stripe-webhook', async (req, res) => {
 });
 
 /**
- * Handle subscription canceled — deactivate user (skip for free users)
+ * Handle subscription canceled — delete all user data (skip for free users)
  */
 async function handleSubscriptionCanceled(stripeSubscription: Stripe.Subscription) {
     const sub = await Subscription.findOne({ stripeSubscriptionId: stripeSubscription.id });
@@ -371,20 +488,66 @@ async function handleSubscriptionCanceled(stripeSubscription: Stripe.Subscriptio
         return;
     }
 
-    // Free users keep their subscription active — no changes needed
+    // Free users keep all data — no changes needed
     if (user.isFreeUser) {
-        console.log(`Webhook: User ${user.email} is a free user, skipping deactivation`);
+        console.log(`Webhook: User ${user.email} is a free user, skipping data deletion`);
         return;
     }
 
-    // Deactivate user subscription
-    user.isSubscribed = false;
-    user.cancelAtPeriodEnd = false;
-    user.currentPeriodEnd = null;
-    await user.save();
+    // Delete subscriptions from DB
+    await Subscription.deleteMany({ userId: user._id });
 
-    await Account.updateMany({ user_id: user._id }, { isSubscribed: false });
-    console.log(`Webhook: Deactivated user ${user.email} after subscription ended`);
+    // Remove Plaid items and delete accounts + transactions
+    const accounts = await Account.find({ user_id: user._id });
+    const accountIds = accounts.map(a => a._id);
+
+    if (accountIds.length > 0) {
+        await Transaction.deleteMany({ accountId: { $in: accountIds } });
+    }
+
+    if (accounts.length > 0) {
+        try {
+            const settings = await Settings.findOne();
+            if (settings?.plaidClientKey && settings?.plaidSecretKey) {
+                const plaidBaseUrl = settings.plaidEnvironment === 'production'
+                    ? 'https://production.plaid.com'
+                    : 'https://sandbox.plaid.com';
+
+                const uniqueTokens = [...new Set(
+                    accounts.map(a => a.access_token).filter(Boolean)
+                )];
+
+                for (const access_token of uniqueTokens) {
+                    try {
+                        const response = await fetch(`${plaidBaseUrl}/item/remove`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                client_id: settings.plaidClientKey,
+                                secret: settings.plaidSecretKey,
+                                access_token,
+                            }),
+                        });
+                        if (!response.ok) {
+                            const err = await response.json() as any;
+                            console.error(`Plaid item/remove failed: ${err?.error_message}`);
+                        }
+                    } catch (plaidErr: any) {
+                        console.error('Plaid item/remove error:', plaidErr.message);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Plaid cleanup error during webhook cancellation:', err);
+        }
+    }
+
+    // Delete accounts, spreadsheets, and user
+    await Account.deleteMany({ user_id: user._id });
+    await UserSpreadsheet.deleteMany({ userId: user._id });
+    await User.findByIdAndDelete(user._id);
+
+    console.log(`Webhook: Deleted all data for user ${user.email} after subscription ended`);
 }
 
 /**

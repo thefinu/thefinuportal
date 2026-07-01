@@ -86,7 +86,7 @@ function SuccessContent() {
                 </h1>
 
                 <p className="mb-8 text-slate-500 text-sm leading-relaxed">
-                    Great news! Your Pro features are now unlocked and ready to use in your Google Sheet.
+                    Great news! Your Pro features are now unlocked and ready to use in your Google Sheet™.
                 </p>
 
                 {details && (
@@ -122,7 +122,7 @@ function SuccessContent() {
                         href={spreadsheetUrl}
                         className="flex w-full items-center justify-center rounded-xl bg-primary px-6 py-4 text-center text-base font-bold text-white shadow-xl shadow-primary/10 transition-all hover:-translate-y-0.5"
                     >
-                        Open Google Sheet <ArrowRight className="ml-2 h-4 w-4" />
+                        Open Google Sheet™ <ArrowRight className="ml-2 h-4 w-4" />
                     </a>
                 </div>
             </div>

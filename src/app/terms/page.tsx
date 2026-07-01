@@ -37,7 +37,7 @@ export default async function TermsPage() {
                     ) : (
                     <div className="prose prose-slate max-w-none space-y-6 text-slate-700 leading-relaxed text-sm">
                         <p>
-                            These Terms of Service (the "Terms") are a legally binding agreement between you and ThefinU, LLC ("ThefinU," "we," "us," and "our") and govern your access to and use of our website located at <a href="https://www.thefinu.com" className="text-secondary font-medium hover:underline">www.thefinu.com</a> and the related personal finance synchronization services, including any spreadsheet Add-ons or Add-ins, offered via the Google Workspace Marketplace (collectively, the "Services").
+                            These Terms of Service (the "Terms") are a legally binding agreement between you and ThefinU, LLC ("ThefinU," "we," "us," and "our") and govern your access to and use of our website located at <a href="https://www.thefinu.com" className="text-secondary font-medium hover:underline">www.thefinu.com</a> and the related personal finance synchronization services, including any spreadsheet Add-ons or Add-ins, offered via the Google Workspace™ Marketplace (collectively, the "Services").
                         </p>
 
                         <div className="p-4 bg-slate-50 border-l-4 border-primary rounded-r-lg">
@@ -91,7 +91,7 @@ export default async function TermsPage() {
                         </section>
 
                         <section>
-                            <h2 className="text-xl font-bold text-slate-900 mt-12 mb-4">4. Privacy and Google Workspace Marketplace Compliance</h2>
+                            <h2 className="text-xl font-bold text-slate-900 mt-12 mb-4">4. Privacy and Google Workspace™ Marketplace Compliance</h2>
                             <h3 className="text-md font-bold text-slate-900 mt-6 mb-3">A. Privacy Policy</h3>
                             <p>
                                 Your use of our Services is also governed by our Privacy Policy, which is incorporated by reference into these Terms. Please review it at: <Link href="/privacy" className="text-secondary hover:underline font-medium">/privacy</Link>.
@@ -99,7 +99,7 @@ export default async function TermsPage() {
                             <h3 className="text-md font-bold text-slate-900 mt-6 mb-3">B. Google Limited Use Requirements</h3>
                             <p>By using the Google Add-on, you agree to the following mandatory limitations on our use of Google-sourced data:</p>
                             <ol className="list-decimal pl-6 space-y-3">
-                                <li><strong>Limited Use:</strong> ThefinU's use of data obtained from Google APIs (including data from your Google Sheets or your Google Account information) is strictly limited to providing and improving the features of the Services that are visible to the user.</li>
+                                <li><strong>Limited Use:</strong> ThefinU's use of data obtained from Google APIs (including data from your Google Sheets™ or your Google Account information) is strictly limited to providing and improving the features of the Services that are visible to the user.</li>
                                 <li><strong>Prohibition on Transfer/Sale:</strong> We will not transfer, sell, or use Google-sourced data for serving advertisements.</li>
                             </ol>
                         </section>

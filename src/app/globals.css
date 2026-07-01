@@ -5,6 +5,14 @@
   --color-secondary: #8B5E66;
   --color-accent: #6E434D;
   --color-background-soft: #f8fafc;
+
+  /* Brand palette */
+  --color-sage: #6E8277;
+  --color-teal: #37484C;
+  --color-wine: #6E434D;
+  --color-coral: #E68E68;
+  --color-peach: #EEC49F;
+  --color-cream: #E9EAD1;
 }
 
 :root {

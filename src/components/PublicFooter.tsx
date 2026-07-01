@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mail, MapPin, ShieldCheck, Zap, Heart } from "lucide-react";
+import { Mail, MapPin, ShieldCheck, Zap, Heart, LifeBuoy } from "lucide-react";
 
 const INSTALL_LINK = "https://workspace.google.com/marketplace/app/thefinu/123456789";
 
@@ -18,7 +18,7 @@ export default function PublicFooter() {
                             <img src="/logo.png" alt="ThefinU Logo" className="h-20 mb-5" />
                         </Link>
                         <p className="text-slate-400 text-sm leading-relaxed mb-5 max-w-xs">
-                            Automated personal finance tracking directly in Google Sheets. Secure, simple, and fully customizable.
+                            Automated personal finance tracking directly in Google Sheets™. Secure, simple, and fully customizable.
                         </p>
                         <div className="flex items-center gap-4 text-sm text-slate-500">
                             <div className="flex items-center gap-1.5">
@@ -59,6 +59,12 @@ export default function PublicFooter() {
                         <h4 className="font-bold text-white mb-5 uppercase text-[11px] tracking-[0.15em]">Support</h4>
                         <ul className="space-y-3 text-sm text-slate-400 font-medium">
                             <li>
+                                <Link href="/help" className="hover:text-white transition-colors flex items-center gap-2">
+                                    <LifeBuoy className="h-3.5 w-3.5" />
+                                    Help Center
+                                </Link>
+                            </li>
+                            <li>
                                 <a href="mailto:support@thefinu.com" className="hover:text-white transition-colors flex items-center gap-2">
                                     <Mail className="h-3.5 w-3.5" />
                                     support@thefinu.com
@@ -67,7 +73,7 @@ export default function PublicFooter() {
                             <li>
                                 <a href={INSTALL_LINK} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors flex items-center gap-2">
                                     <Zap className="h-3.5 w-3.5" />
-                                    Google Workspace
+                                    Google Workspace™
                                 </a>
                             </li>
                         </ul>

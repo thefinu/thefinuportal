@@ -1,8 +1,13 @@
-import mongoose, { Schema } from 'mongoose';
+import mongoose, { Schema, type Document } from 'mongoose';
 
-const ContentSchema = new Schema({
+export interface IContent extends Document {
+    section: string;
+    data: unknown;
+}
+
+const ContentSchema = new Schema<IContent>({
     section: { type: String, required: true, unique: true },
     data: { type: Schema.Types.Mixed, required: true },
 }, { timestamps: true, collection: 'cms_content' });
 
-export default mongoose.model('Content', ContentSchema);
+export default mongoose.model<IContent>('Content', ContentSchema);

@@ -92,7 +92,7 @@ export default async function PrivacyPage() {
 
                         <section>
                             <h2 className="text-xl font-bold text-slate-900 mt-12 mb-4">Third-Party Websites</h2>
-                            <p>There are places on our website where you may click on a link to access other websites that do not operate under this Privacy Policy. For example, to open your Google Sheet, you will be taken to a Google website that we do not control. These third-party websites may independently solicit and collect information, including personal information, from you and, in some instances, provide us with information about your activities on those websites. We recommend that you consult the privacy policies of all third-party websites you visit by clicking on the “privacy” link typically located at the bottom of the webpage you are visiting.</p>
+                            <p>There are places on our website where you may click on a link to access other websites that do not operate under this Privacy Policy. For example, to open your Google Sheet™, you will be taken to a Google website that we do not control. These third-party websites may independently solicit and collect information, including personal information, from you and, in some instances, provide us with information about your activities on those websites. We recommend that you consult the privacy policies of all third-party websites you visit by clicking on the “privacy” link typically located at the bottom of the webpage you are visiting.</p>
                         </section>
 
                         <section>
@@ -104,7 +104,7 @@ export default async function PrivacyPage() {
                             <h2 className="text-xl font-bold text-slate-900 mt-12 mb-4">How You Can Access Your Information</h2>
                             <p>If you have an online account with us, you have the ability to delete your personal information online and close your account by contacting our support team at support@thefinu.com.</p>
                             <p>If you cancel your account we will delete your personal financial and transaction data. After you close your account, you will not be able to sign in to our website or access any of your personal information. However, you can open a new account at any time. If you close your account, we may still retain certain information associated with your account (such as your email address and certain communications with you) for analytical purposes and recordkeeping integrity, as well as to prevent fraud, enforce our terms and conditions, take actions we deem necessary to protect the integrity of our website or our users, or take other actions otherwise permitted by law. If you close your account, we will delete the account  data we have downloaded from your institutions.</p>
-                            <p>In addition, if certain information has been provided to third parties as described in this Privacy Policy, such as transaction data uploaded to your Google Sheet, retention of that information will be subject to those third parties’ policies.</p>
+                            <p>In addition, if certain information has been provided to third parties as described in this Privacy Policy, such as transaction data uploaded to your Google Sheet™, retention of that information will be subject to those third parties’ policies.</p>
                         </section>
 
                         <section>

@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // Routes exclusively served on admin.thefinu.com
-const ADMIN_PATHS = ['/dashboard', '/users', '/accounts', '/settings', '/subscriptions'];
+const ADMIN_PATHS = ['/dashboard', '/users', '/accounts', '/settings', '/subscriptions', '/cms', '/plans'];
 
 // Routes exclusively served on thefinu.com (public)
-const PUBLIC_ONLY_PATHS = ['/', '/about', '/contact', '/privacy', '/terms', '/cancel', '/success'];
+const PUBLIC_ONLY_PATHS = ['/', '/about', '/contact', '/privacy', '/terms', '/cancel', '/success', '/help'];
 
 // /login is shared — both domains can access it
 const SHARED_PATHS = ['/login'];
