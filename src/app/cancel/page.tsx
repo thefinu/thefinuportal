@@ -1,20 +1,12 @@
 "use client";
 
-import { AlertCircle, ArrowLeft, HelpCircle, ArrowRight, Ban } from "lucide-react";
+import { AlertCircle, ArrowLeft, HelpCircle, Ban } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import PublicHeader from "@/components/PublicHeader";
 import PublicFooter from "@/components/PublicFooter";
 
 function CancelContent() {
-    const searchParams = useSearchParams();
-    const spreadsheetId = searchParams.get("spreadsheet_id");
-
-    const spreadsheetUrl = spreadsheetId
-        ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
-        : "/";
-
     return (
         <div className="w-full max-w-xl mx-auto py-12 px-4">
             <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden p-8 sm:p-12 text-center relative">
@@ -33,12 +25,12 @@ function CancelContent() {
                 </p>
 
                 <div className="grid grid-cols-1 gap-4">
-                    <a
-                        href={spreadsheetUrl}
+                    <Link
+                        href="/"
                         className="flex w-full items-center justify-center rounded-xl bg-slate-900 px-6 py-4 text-center text-base font-bold text-white shadow-xl shadow-slate-100 transition-all hover:-translate-y-0.5"
                     >
-                        Return to Sheets <ArrowRight className="ml-2 h-4 w-4" />
-                    </a>
+                        <ArrowLeft className="mr-2 h-4 w-4" /> Return to Home
+                    </Link>
 
                     <a
                         href="mailto:support@thefinu.com"

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, CheckCircle, Loader2, CreditCard, Sparkles } from "lucide-react";
+import { ArrowLeft, CheckCircle, Loader2, CreditCard, Sparkles } from "lucide-react";
 import Link from "next/link";
 import api from "@/lib/api";
 import PublicHeader from "@/components/PublicHeader";
@@ -65,10 +65,6 @@ function SuccessContent() {
         );
     }
 
-    const spreadsheetUrl = spreadsheetId
-        ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`
-        : "/";
-
     return (
         <div className="w-full max-w-xl mx-auto py-12 px-4">
             <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden p-8 sm:p-12 text-center relative group">
@@ -86,7 +82,9 @@ function SuccessContent() {
                 </h1>
 
                 <p className="mb-8 text-slate-500 text-sm leading-relaxed">
-                    Great news! Your Pro features are now unlocked and ready to use in your Google Sheet™.
+                    {spreadsheetId
+                        ? "Great news! Your Pro features are now unlocked and ready to use in your Google Sheet™."
+                        : "Your subscription is active. Install the ThefinU add-on in Google Sheets™ to start syncing your finances — be sure to use the same email you paid with."}
                 </p>
 
                 {details && (
@@ -118,12 +116,12 @@ function SuccessContent() {
                 )}
 
                 <div className="grid gap-4">
-                    <a
-                        href={spreadsheetUrl}
+                    <Link
+                        href="/"
                         className="flex w-full items-center justify-center rounded-xl bg-primary px-6 py-4 text-center text-base font-bold text-white shadow-xl shadow-primary/10 transition-all hover:-translate-y-0.5"
                     >
-                        Open Google Sheet™ <ArrowRight className="ml-2 h-4 w-4" />
-                    </a>
+                        <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
+                    </Link>
                 </div>
             </div>
         </div>

@@ -6,7 +6,7 @@ import api from "@/lib/api";
 
 type Tab = "home" | "about" | "contact" | "legal";
 type LegalSub = "terms" | "privacy";
-type HomeSection = "hero" | "install" | "features" | "steps" | "pricing" | "faq" | "cta";
+type HomeSection = "hero" | "install" | "features" | "steps" | "faq" | "cta";
 
 interface HeroData { headline: string; headlineHighlight: string; subheading: string; }
 interface FeaturesData {
@@ -15,12 +15,6 @@ interface FeaturesData {
 }
 interface StepItem { title: string; desc: string; points: string[]; }
 interface StepsData { sectionHeading: string; sectionSubheading: string; items: StepItem[]; }
-interface PricingData {
-    sectionHeading: string; sectionSubheading: string;
-    price: string; period: string; monthlyEquiv: string;
-    features: string[];
-    whyItems: { title: string; desc: string }[];
-}
 interface FaqItem { q: string; a: string; }
 interface CtaData { heading: string; subheading: string; }
 interface InstallBtnData { label: string; url: string; }
@@ -53,20 +47,6 @@ const DEFAULT_STEPS: StepsData = {
         { title: "Link your accounts", desc: "Securely connect your bank accounts, credit cards, investments, and loans through Plaid — the same infrastructure trusted by Venmo and Robinhood.", points: ["Connect with 12,000+ banks via Plaid", "Link checking, savings, cards, investments", "Get transaction history imported instantly"] },
         { title: "Get automatic updates", desc: "Your transactions, balances, and account details sync automatically per day — completely hands-free, zero manual entry.", points: ["Multiple daily updates — completely hands-free", "Transactions and balances always current", "Never manually enter data again"] },
         { title: "Make reports", desc: "Start with ready-made budget templates, then prepare the transactions sheets. Generate the reports monthly and yearly basis.", points: ["Premade templates", "Generate budgets, net worth trends, and spending breakdowns"] },
-    ],
-};
-const DEFAULT_PRICING: PricingData = {
-    sectionHeading: "Simple, transparent pricing",
-    sectionSubheading: "One plan. Everything included.",
-    price: "$29",
-    period: "/ year",
-    monthlyEquiv: "$2.42/month",
-    features: ["Unlimited bank connections", "Multiple daily auto-syncs", "Full transaction history", "Free templates", "Smart categorization", "Priority support", "14-day free trial"],
-    whyItems: [
-        { title: "Save 30+ hours/year", desc: "No more manual data entry or CSV exports." },
-        { title: "Cheaper than alternatives", desc: "YNAB: $99/yr. Copilot: $96/yr. ThefinU: $29/yr." },
-        { title: "Better awareness", desc: "Tracking spending reduces expenses by 15%." },
-        { title: "Share with partner", desc: "Collaborate using Google Sheets sharing." },
     ],
 };
 const DEFAULT_FAQ: FaqItem[] = [
@@ -173,8 +153,6 @@ export default function CMSPage() {
     const [steps, setSteps] = useState<StepsData>(DEFAULT_STEPS);
     const [stepsL, setStepsL] = useState(false); const [stepsS, setStepsS] = useState(false);
 
-    const [pricing, setPricing] = useState<PricingData>(DEFAULT_PRICING);
-    const [pricingL, setPricingL] = useState(false); const [pricingS, setPricingS] = useState(false);
 
     const [faq, setFaq] = useState<FaqItem[]>(DEFAULT_FAQ);
     const [faqL, setFaqL] = useState(false); const [faqS, setFaqS] = useState(false);
@@ -208,7 +186,6 @@ export default function CMSPage() {
         load("home_hero", setHero);
         load("home_features", setFeatures);
         load("home_steps", setSteps);
-        load("home_pricing", setPricing);
         load("home_faq", setFaq);
         load("home_cta", setCta);
         load("home_install", setInstallBtn);
@@ -270,7 +247,7 @@ export default function CMSPage() {
 
                     {/* INSTALL BUTTON */}
                     <AccordionSection id="install" open={openSection === "install"} title="Install Button" onToggle={() => toggleSection("install")} loading={installL} saved={installS} onSave={() => save("home_install", installBtn, setInstallL, setInstallS)}>
-                        <p className="text-xs text-slate-400 -mt-1 mb-1">This button appears in the Hero, Pricing, and Final CTA sections.</p>
+                        <p className="text-xs text-slate-400 -mt-1 mb-1">This button appears in the Hero and Final CTA sections.</p>
                         <Field label="Button Label" value={installBtn.label} onChange={v => setInstallBtn(p => ({ ...p, label: v }))} placeholder="Install on Google Sheets" />
                         <Field label="Button URL" value={installBtn.url} onChange={v => setInstallBtn(p => ({ ...p, url: v }))} placeholder="https://workspace.google.com/marketplace/..." />
                     </AccordionSection>
@@ -344,58 +321,6 @@ export default function CMSPage() {
                         </div>
                     </AccordionSection>
 
-                    {/* PRICING */}
-                    <AccordionSection id="pricing" open={openSection === "pricing"} title="Pricing Section" onToggle={() => toggleSection("pricing")} loading={pricingL} saved={pricingS} onSave={() => save("home_pricing", pricing, setPricingL, setPricingS)}>
-                        <Field label="Section Heading" value={pricing.sectionHeading} onChange={v => setPricing(p => ({ ...p, sectionHeading: v }))} />
-                        <Field label="Section Subheading" value={pricing.sectionSubheading} onChange={v => setPricing(p => ({ ...p, sectionSubheading: v }))} />
-                        <div className="grid grid-cols-3 gap-3">
-                            <Field label="Price" value={pricing.price} onChange={v => setPricing(p => ({ ...p, price: v }))} placeholder="$29" />
-                            <Field label="Period" value={pricing.period} onChange={v => setPricing(p => ({ ...p, period: v }))} placeholder="/ year" />
-                            <Field label="Monthly Equivalent" value={pricing.monthlyEquiv} onChange={v => setPricing(p => ({ ...p, monthlyEquiv: v }))} placeholder="$2.42/month" />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Feature Bullets</label>
-                            <div className="space-y-1.5">
-                                {pricing.features.map((f, i) => (
-                                    <div key={i} className="flex gap-2">
-                                        <input type="text" value={f} placeholder={`Feature ${i + 1}`}
-                                            onChange={e => setPricing(p => ({ ...p, features: p.features.map((x, j) => j === i ? e.target.value : x) }))}
-                                            className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 bg-slate-50" />
-                                        <button onClick={() => setPricing(p => ({ ...p, features: p.features.filter((_, j) => j !== i) }))}
-                                            className="text-rose-400 hover:text-rose-600 cursor-pointer"><Trash2 className="h-3.5 w-3.5" /></button>
-                                    </div>
-                                ))}
-                                <button onClick={() => setPricing(p => ({ ...p, features: [...p.features, ""] }))}
-                                    className="flex items-center gap-2 text-sm text-secondary hover:text-secondary/80 font-medium cursor-pointer">
-                                    <Plus className="h-4 w-4" /> Add Feature
-                                </button>
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Why It's Worth It</label>
-                            <div className="space-y-3">
-                                {pricing.whyItems.map((item, i) => (
-                                    <div key={i} className="border border-slate-100 rounded-lg p-3 bg-slate-50/50 space-y-2">
-                                        <div className="flex justify-between">
-                                            <span className="text-xs text-slate-400">Item {i + 1}</span>
-                                            <button onClick={() => setPricing(p => ({ ...p, whyItems: p.whyItems.filter((_, j) => j !== i) }))}
-                                                className="text-rose-400 hover:text-rose-600 cursor-pointer"><Trash2 className="h-3.5 w-3.5" /></button>
-                                        </div>
-                                        <input type="text" placeholder="Title" value={item.title}
-                                            onChange={e => setPricing(p => ({ ...p, whyItems: p.whyItems.map((x, j) => j === i ? { ...x, title: e.target.value } : x) }))}
-                                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 bg-white" />
-                                        <input type="text" placeholder="Description" value={item.desc}
-                                            onChange={e => setPricing(p => ({ ...p, whyItems: p.whyItems.map((x, j) => j === i ? { ...x, desc: e.target.value } : x) }))}
-                                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-secondary/30 bg-white" />
-                                    </div>
-                                ))}
-                                <button onClick={() => setPricing(p => ({ ...p, whyItems: [...p.whyItems, { title: "", desc: "" }] }))}
-                                    className="flex items-center gap-2 text-sm text-secondary hover:text-secondary/80 font-medium cursor-pointer">
-                                    <Plus className="h-4 w-4" /> Add Item
-                                </button>
-                            </div>
-                        </div>
-                    </AccordionSection>
 
                     {/* FAQ */}
                     <AccordionSection id="faq" open={openSection === "faq"} title="FAQ Section" badge={`${faq.length} items`} onToggle={() => toggleSection("faq")} loading={faqL} saved={faqS} onSave={() => save("home_faq", faq, setFaqL, setFaqS)}>

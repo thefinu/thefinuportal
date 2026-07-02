@@ -25,10 +25,7 @@ import {
     Smartphone,
     FileSpreadsheet,
     DollarSign,
-    LineChart,
     Wallet,
-    CircleDollarSign,
-    Users,
     Plus,
     Minus,
     ArrowUpRight,
@@ -226,20 +223,6 @@ const DEFAULT_STEPS_CMS = {
         { title: "Make reports", desc: "Start with ready-made budget templates, then prepare the transactions sheets. Generate the reports monthly and yearly basis.", points: ["Premade templates", "Generate budgets, net worth trends, and spending breakdowns"] },
     ],
 };
-const DEFAULT_PRICING = {
-    sectionHeading: "Simple, transparent pricing",
-    sectionSubheading: "One plan. Everything included.",
-    price: "$29",
-    period: "/ year",
-    monthlyEquiv: "$2.42/month",
-    features: ["Unlimited bank connections", "Multiple daily auto-syncs", "Full transaction history", "Free templates", "Smart categorization", "Priority support", "14-day free trial"],
-    whyItems: [
-        { title: "Save 30+ hours/year", desc: "No more manual data entry or CSV exports." },
-        { title: "Cheaper than alternatives", desc: "YNAB: $99/yr. Copilot: $96/yr. ThefinU: $29/yr." },
-        { title: "Better awareness", desc: "Tracking spending reduces expenses by 15%." },
-        { title: "Share with partner", desc: "Collaborate using Google Sheets™ sharing." },
-    ],
-};
 const DEFAULT_FAQ = [
     { q: "How does ThefinU connect to my bank?", a: "Via Plaid — the same service used by Venmo, Robinhood, and thousands of apps. Your credentials go directly to Plaid; we never see them." },
     { q: "Is my financial data secure?", a: "Yes. 256-bit encryption, read-only access only. We can never initiate transactions or move your money." },
@@ -265,9 +248,6 @@ const STEP_META = [
     { icon: RefreshCw, screenshot: "/steps/step-2-auto-sync.png" },
     { icon: TrendingUp, screenshot: "/steps/step-3-customize.png" },
 ];
-// Why items icons are fixed
-const WHY_ICONS = [Clock, CircleDollarSign, LineChart, Users];
-
 interface PublicPlan {
     id: string;
     name: string;
@@ -315,7 +295,7 @@ function PlanCards({
     const showToggle = anyMonthly && anyYearly;
 
     return (
-        <div className="reveal">
+        <div className="animate-slide-up">
             {showToggle && (
                 <div className="flex items-center justify-center mb-10">
                     <div className="inline-flex items-center bg-white border border-slate-200 rounded-full p-1">
@@ -415,7 +395,6 @@ export default function HomePage() {
     const [hero, setHero] = useState(DEFAULT_HERO);
     const [features, setFeatures] = useState(DEFAULT_FEATURES);
     const [stepsCms, setStepsCms] = useState(DEFAULT_STEPS_CMS);
-    const [pricing, setPricing] = useState(DEFAULT_PRICING);
     const [faqItems, setFaqItems] = useState(DEFAULT_FAQ);
     const [cta, setCta] = useState(DEFAULT_CTA);
     const [installBtn, setInstallBtn] = useState(DEFAULT_INSTALL_BTN);
@@ -430,7 +409,6 @@ export default function HomePage() {
         load("home_hero", setHero);
         load("home_features", setFeatures);
         load("home_steps", setStepsCms);
-        load("home_pricing", setPricing);
         load("home_faq", setFaqItems);
         load("home_cta", setCta);
         load("home_install", setInstallBtn);
@@ -672,8 +650,8 @@ export default function HomePage() {
                     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="text-center mb-14 reveal">
                             <span className="inline-block text-[11px] font-bold uppercase tracking-[0.2em] text-coral bg-coral/10 px-3 py-1 rounded-full">Pricing</span>
-                            <h2 className="text-3xl md:text-4xl font-bold text-teal mt-4 mb-3">{pricing.sectionHeading}</h2>
-                            <p className="text-slate-500 text-sm">{pricing.sectionSubheading}</p>
+                            <h2 className="text-3xl md:text-4xl font-bold text-teal mt-4 mb-3">Simple, transparent pricing</h2>
+                            <p className="text-slate-500 text-sm">Choose the plan that works for you. Cancel anytime.</p>
                         </div>
 
                         {plans.length > 0 ? (
@@ -685,57 +663,7 @@ export default function HomePage() {
                                 busyId={checkoutBusy}
                             />
                         ) : (
-                        <div className="reveal max-w-4xl mx-auto">
-                            <div className="bg-white rounded-3xl border border-slate-200/70 overflow-hidden shadow-2xl shadow-teal/10">
-                                <div className="grid md:grid-cols-5">
-                                    {/* Left: Plan details */}
-                                    <div className="md:col-span-3 p-8 md:p-10">
-                                        <div className="flex items-center gap-3 mb-6">
-                                            <span className="text-[10px] font-semibold text-white bg-coral px-2.5 py-0.5 rounded-full uppercase tracking-wider">Free Trial</span>
-                                        </div>
-                                        <div className="flex items-end gap-1.5 mb-1">
-                                            <span className="text-5xl font-bold text-teal">{pricing.price}</span>
-                                            <span className="text-base text-slate-400 pb-1.5">{pricing.period}</span>
-                                        </div>
-                                        <p className="text-sm text-slate-500 mb-8">That&apos;s just <span className="font-semibold text-coral">{pricing.monthlyEquiv}</span> — less than a coffee</p>
-
-                                        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3 mb-8">
-                                            {pricing.features.map((f, i) => (
-                                                <div key={i} className="flex items-center gap-2 text-sm text-slate-600">
-                                                    <CheckCircle2 className="h-3.5 w-3.5 text-sage shrink-0" />{f}
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        <a href={installBtn.url} target="_blank" rel="noopener noreferrer"
-                                            className="group inline-flex bg-coral hover:-translate-y-0.5 text-white px-8 py-3.5 rounded-xl text-sm font-semibold transition-all duration-200 items-center gap-2 active:scale-[0.98] cursor-pointer">
-                                            {installBtn.label} <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
-                                        </a>
-                                        <p className="text-xs text-slate-400 mt-3">14-day free trial · Cancel anytime · No spreadsheet skills needed</p>
-                                    </div>
-
-                                    {/* Right: Why it's worth it (dark) */}
-                                    <div className="md:col-span-2 bg-teal p-8 md:p-10">
-                                        <h3 className="text-sm font-bold text-white mb-2">Why it&apos;s worth it</h3>
-                                        <p className="text-xs text-cream/70 leading-relaxed mb-6">Most people spend 2-4 hours/month manually tracking finances. ThefinU saves all that.</p>
-                                        <div className="space-y-5">
-                                            {pricing.whyItems.map((item, i) => {
-                                                const Icon = WHY_ICONS[i % WHY_ICONS.length];
-                                                return (
-                                                    <div key={i} className="flex gap-3">
-                                                        <Icon className="h-4 w-4 text-peach shrink-0 mt-0.5" />
-                                                        <div>
-                                                            <div className="text-sm font-semibold text-white">{item.title}</div>
-                                                            <div className="text-xs text-cream/60 mt-0.5">{item.desc}</div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                            <p className="text-center text-sm text-slate-400">Pricing is being updated — please check back soon.</p>
                         )}
                     </div>
                 </section>
