@@ -4,6 +4,7 @@ import PlaidPricing from '../models/PlaidPricing.js';
 import PlaidUsage from '../models/PlaidUsage.js';
 import User from '../models/User.js';
 import { auth } from '../middleware/authMiddleware.js';
+import { gasAuth } from '../middleware/gasAuthMiddleware.js';
 
 // Maps billing type from payload to the product name in plaid_pricing
 const BILLING_PRODUCT_MAP: Record<string, string> = {
@@ -18,12 +19,20 @@ const BILLING_PRODUCT_MAP: Record<string, string> = {
 const router = express.Router();
 
 // POST /api/plaid/usage/log — log a Plaid API usage event
-router.post('/usage/log', async (req, res) => {
+router.post('/usage/log', gasAuth, async (req, res) => {
     try {
-        const { email, billing, endpoint, status, timestamp } = req.body;
+        const { billing, endpoint, status, timestamp } = req.body;
 
-        if (!email || !billing || !endpoint) {
-            return res.status(400).json({ message: 'email, billing, and endpoint are required' });
+        // Attribute usage to the OAuth-verified caller so billing records cannot be
+        // forged against another account.
+        const email = (req as any).gasUser?.email;
+
+        if (!email) {
+            return res.status(401).json({ message: 'Authenticated user email is required' });
+        }
+
+        if (!billing || !endpoint) {
+            return res.status(400).json({ message: 'billing and endpoint are required' });
         }
 
         if (!(billing in BILLING_PRODUCT_MAP)) {

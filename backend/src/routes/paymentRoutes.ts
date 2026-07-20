@@ -9,17 +9,24 @@ import UserSpreadsheet from '../models/UserSpreadsheet.js';
 import Plan from '../models/Plan.js';
 import { gasAuth, type GasAuthRequest } from '../middleware/gasAuthMiddleware.js';
 import { refundSubscription } from '../utils/stripeRefund.js';
-import { getStripe } from '../utils/stripeClient.js';
+import { getStripe, STRIPE_API_VERSION } from '../utils/stripeClient.js';
+import { resolvePlaidCredentials, isDevUser } from '../utils/envCredentials.js';
+import { ensureDevPlanPrices, getDevStripe } from '../utils/devStripePlans.js';
 
 const router = express.Router();
 
 /**
  * Resolve the Stripe Price ID to charge from a plan + interval selection.
+ *
+ * When `isDev` is true the price is resolved from the plan's TEST-account mirror
+ * (created lazily), because live-mode price IDs cannot be charged with a test key.
+ *
  * Returns the price id and the plan's trial days.
  */
 async function resolvePrice(
     planId: string | undefined,
     interval: string | undefined,
+    isDev = false,
 ): Promise<{ priceId: string; trialDays: number | null }> {
     if (!planId) {
         throw new Error('A plan must be selected for checkout');
@@ -30,13 +37,23 @@ async function resolvePrice(
     }
     const isYearly = interval === 'yearly';
     const regularAmount = isYearly ? plan.yearlyAmount : plan.monthlyAmount;
-    const regularPriceId = isYearly ? plan.yearlyPriceId : plan.monthlyPriceId;
     const saleAmount = isYearly ? plan.saleYearlyAmount : plan.saleMonthlyAmount;
-    const salePriceId = isYearly ? plan.saleYearlyPriceId : plan.saleMonthlyPriceId;
 
     // Charge the sale price when a valid sale is active for this interval
-    const onSale = saleAmount > 0 && saleAmount < regularAmount && !!salePriceId;
-    const priceId = onSale ? salePriceId : regularPriceId;
+    const onSale = saleAmount > 0 && saleAmount < regularAmount;
+
+    let priceId: string;
+    if (isDev) {
+        // Make sure this plan exists in the TEST account, then use those price IDs
+        await ensureDevPlanPrices(plan);
+        priceId = onSale
+            ? (isYearly ? plan.devSaleYearlyPriceId : plan.devSaleMonthlyPriceId)
+            : (isYearly ? plan.devYearlyPriceId : plan.devMonthlyPriceId);
+    } else {
+        const regularPriceId = isYearly ? plan.yearlyPriceId : plan.monthlyPriceId;
+        const salePriceId = isYearly ? plan.saleYearlyPriceId : plan.saleMonthlyPriceId;
+        priceId = onSale && salePriceId ? salePriceId : regularPriceId;
+    }
 
     if (!priceId) {
         throw new Error(`This plan does not offer ${isYearly ? 'yearly' : 'monthly'} billing`);
@@ -50,22 +67,28 @@ async function resolvePrice(
  */
 router.post('/create-checkout-session', gasAuth, async (req: GasAuthRequest, res) => {
     try {
-        const { email, spreadsheetId, planId, interval } = req.body;
-        const userEmail = email || req.gasUser?.email;
+        const { spreadsheetId, planId, interval } = req.body;
+
+        // Always use the OAuth-verified identity — never an email from the request
+        // body. A caller could otherwise pass a Development Environment address to
+        // obtain a free test-mode checkout.
+        const userEmail = req.gasUser?.email;
 
         if (!userEmail) {
-            return res.status(400).json({ message: 'Email is required' });
+            return res.status(401).json({ message: 'Authenticated user email is required' });
         }
 
         const settings = await Settings.findOne();
-        if (!settings || !settings.stripeSecretKey) {
+        if (!settings) {
             return res.status(500).json({ message: 'Stripe is not configured' });
         }
 
-        const stripe = await getStripe();
+        // Dev-allowlisted users check out against the TEST Stripe account
+        const dev = isDevUser(settings, userEmail);
+        const stripe = await getStripe(userEmail);
 
         // Resolve which price to charge from the selected plan + interval
-        const { priceId, trialDays: planTrialDays } = await resolvePrice(planId, interval);
+        const { priceId, trialDays: planTrialDays } = await resolvePrice(planId, interval, dev);
 
         const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
         const trialDays = planTrialDays ?? 14;
@@ -155,12 +178,23 @@ router.post('/verify-session', async (req, res) => {
             return res.status(400).json({ message: 'Session ID is required' });
         }
 
-        const stripe = await getStripe();
-
-        // Retrieve the session
-        const session = await stripe.checkout.sessions.retrieve(sessionId, {
-            expand: ['subscription', 'line_items']
-        });
+        // The session belongs to either the live or the test account, and we don't know
+        // which until we look it up — try production first, then the dev/test account.
+        let session: Stripe.Checkout.Session | null = null;
+        let fromDevAccount = false;
+        try {
+            const stripe = await getStripe();
+            session = await stripe.checkout.sessions.retrieve(sessionId, {
+                expand: ['subscription', 'line_items']
+            });
+        } catch (prodErr: any) {
+            const devStripe = await getDevStripe();
+            if (!devStripe) throw prodErr;
+            session = await devStripe.checkout.sessions.retrieve(sessionId, {
+                expand: ['subscription', 'line_items']
+            });
+            fromDevAccount = true;
+        }
 
         if (!session) {
             return res.status(404).json({ message: 'Session not found' });
@@ -170,6 +204,16 @@ router.post('/verify-session', async (req, res) => {
 
         if (!customerEmail) {
             return res.status(400).json({ message: 'No email found in session' });
+        }
+
+        // This endpoint is unauthenticated and grants a subscription, so a test-mode
+        // session must only ever activate a Development Environment account.
+        if (fromDevAccount) {
+            const settings = await Settings.findOne();
+            if (!isDevUser(settings, customerEmail)) {
+                console.warn(`Rejected test-mode session ${sessionId} for non-dev email ${customerEmail}`);
+                return res.status(403).json({ message: 'Test-mode session is not permitted for this account' });
+            }
         }
 
         // Find or Update User
@@ -269,12 +313,14 @@ router.post('/verify-session', async (req, res) => {
  * @route   POST /api/payment/unsubscribe
  * @desc    Refund, cancel subscription, and delete all user data (unless free user)
  */
-router.post('/unsubscribe', gasAuth, async (req, res) => {
+router.post('/unsubscribe', gasAuth, async (req: GasAuthRequest, res) => {
     try {
-        const { email } = req.body;
+        // This refunds, cancels and deletes user data, so it must only ever act on
+        // the OAuth-verified caller — never an email supplied in the request body.
+        const email = req.gasUser?.email;
 
         if (!email) {
-            return res.status(400).json({ message: 'Email is required' });
+            return res.status(401).json({ message: 'Authenticated user email is required' });
         }
 
         const user = await User.findOne({ email: email.toLowerCase() });
@@ -292,7 +338,7 @@ router.post('/unsubscribe', gasAuth, async (req, res) => {
 
         // 1. Refund and cancel all Stripe subscriptions
         const subscriptions = await Subscription.find({ userId: user._id });
-        const stripe = await getStripe();
+        const stripe = await getStripe(user.email);
         const results: Array<Record<string, unknown>> = [];
 
         for (const sub of subscriptions) {
@@ -340,10 +386,9 @@ router.post('/unsubscribe', gasAuth, async (req, res) => {
         if (accounts.length > 0) {
             try {
                 const settings = await Settings.findOne();
-                if (settings?.plaidClientKey && settings?.plaidSecretKey) {
-                    const plaidBaseUrl = settings.plaidEnvironment === 'production'
-                        ? 'https://production.plaid.com'
-                        : 'https://sandbox.plaid.com';
+                const plaid = settings ? resolvePlaidCredentials(settings, user.email) : null;
+                if (plaid?.clientKey && plaid?.secretKey) {
+                    const plaidBaseUrl = plaid.baseUrl;
 
                     const uniqueTokens = [...new Set(
                         accounts.map(a => a.access_token).filter(Boolean)
@@ -355,8 +400,8 @@ router.post('/unsubscribe', gasAuth, async (req, res) => {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
-                                    client_id: settings.plaidClientKey,
-                                    secret: settings.plaidSecretKey,
+                                    client_id: plaid.clientKey,
+                                    secret: plaid.secretKey,
                                     access_token,
                                 }),
                             });
@@ -413,23 +458,43 @@ router.post('/stripe-webhook', async (req, res) => {
             return res.status(500).json({ message: 'Stripe is not configured' });
         }
 
-        const stripe = new Stripe(settings.stripeSecretKey, {
-            apiVersion: '2024-12-18.acacia' as any,
-        });
+        // Events can originate from either the live account or, for Development
+        // Environment users, the test account. Each account signs with its own
+        // secret, so try every configured secret until one verifies.
+        const signingCandidates: Array<{ secretKey: string; webhookSecret: string }> = [
+            { secretKey: settings.stripeSecretKey, webhookSecret: settings.stripeWebhookSecret },
+        ];
+        if (settings.devEnabled && settings.devStripeSecretKey && settings.devStripeWebhookSecret) {
+            signingCandidates.push({
+                secretKey: settings.devStripeSecretKey,
+                webhookSecret: settings.devStripeWebhookSecret,
+            });
+        }
 
-        let event: Stripe.Event;
+        const verifiable = signingCandidates.filter((c) => c.webhookSecret);
+        let event: Stripe.Event | null = null;
 
-        // Verify webhook signature if secret is configured
-        if (settings.stripeWebhookSecret) {
+        if (verifiable.length > 0) {
             const sig = req.headers['stripe-signature'] as string;
-            try {
-                event = stripe.webhooks.constructEvent(req.body, sig, settings.stripeWebhookSecret);
-            } catch (webhookErr: any) {
-                console.error('Webhook signature verification failed:', webhookErr.message);
+            for (const candidate of verifiable) {
+                try {
+                    const stripe = new Stripe(candidate.secretKey, {
+                        apiVersion: STRIPE_API_VERSION as any,
+                    });
+                    event = stripe.webhooks.constructEvent(req.body, sig, candidate.webhookSecret);
+                    break;
+                } catch {
+                    // Signature did not match this account — try the next one.
+                }
+            }
+
+            if (!event) {
+                console.error('Webhook signature verification failed for all configured accounts');
                 return res.status(400).json({ message: 'Webhook signature verification failed' });
             }
         } else {
             // No webhook secret configured — parse body directly (not recommended for production)
+            console.warn('Stripe webhook received without a configured signing secret — skipping verification');
             event = req.body as Stripe.Event;
         }
 
@@ -508,10 +573,9 @@ async function handleSubscriptionCanceled(stripeSubscription: Stripe.Subscriptio
     if (accounts.length > 0) {
         try {
             const settings = await Settings.findOne();
-            if (settings?.plaidClientKey && settings?.plaidSecretKey) {
-                const plaidBaseUrl = settings.plaidEnvironment === 'production'
-                    ? 'https://production.plaid.com'
-                    : 'https://sandbox.plaid.com';
+            const plaid = settings ? resolvePlaidCredentials(settings, user.email) : null;
+            if (plaid?.clientKey && plaid?.secretKey) {
+                const plaidBaseUrl = plaid.baseUrl;
 
                 const uniqueTokens = [...new Set(
                     accounts.map(a => a.access_token).filter(Boolean)
@@ -523,8 +587,8 @@ async function handleSubscriptionCanceled(stripeSubscription: Stripe.Subscriptio
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                client_id: settings.plaidClientKey,
-                                secret: settings.plaidSecretKey,
+                                client_id: plaid.clientKey,
+                                secret: plaid.secretKey,
                                 access_token,
                             }),
                         });
@@ -594,7 +658,8 @@ router.post('/extend-trial', async (req, res) => {
             return res.status(404).json({ message: 'Subscription not found' });
         }
 
-        const stripe = await getStripe();
+        // Resolve against the subscriber's environment (dev users live in the test account)
+        const stripe = await getStripe(sub.paymentEmail);
 
         // Calculate new trial_end: from now + days, or from existing trial_end + days
         const now = Math.floor(Date.now() / 1000);

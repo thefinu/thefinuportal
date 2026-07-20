@@ -9,6 +9,7 @@ import Settings from '../models/Settings.js';
 import { gasAuth } from '../middleware/gasAuthMiddleware.js';
 import { auth } from '../middleware/authMiddleware.js';
 import { refundSubscription } from '../utils/stripeRefund.js';
+import { resolvePlaidCredentials } from '../utils/envCredentials.js';
 
 const router = express.Router();
 
@@ -18,10 +19,14 @@ const router = express.Router();
  */
 router.post('/validate-user', gasAuth, async (req, res) => {
     try {
-        const { email, spreadsheetId } = req.body;
+        const { spreadsheetId } = req.body;
+
+        // Use the OAuth-verified identity rather than the request body, so a caller
+        // cannot read or modify another user's record by passing their email.
+        const email = (req as any).gasUser?.email;
 
         if (!email) {
-            return res.status(400).json({ status: 'error', message: 'Email is required' });
+            return res.status(401).json({ status: 'error', message: 'Authenticated user email is required' });
         }
 
         let user = await User.findOne({ email });
@@ -233,10 +238,9 @@ router.delete('/:id', auth, async (req, res) => {
         if (!user.isSubscribed && !user.isFreeUser && accounts.length > 0) {
             try {
                 const settings = await Settings.findOne();
-                if (settings?.plaidClientKey && settings?.plaidSecretKey) {
-                    const plaidBaseUrl = settings.plaidEnvironment === 'production'
-                        ? 'https://production.plaid.com'
-                        : 'https://sandbox.plaid.com';
+                const plaid = settings ? resolvePlaidCredentials(settings, user.email) : null;
+                if (plaid?.clientKey && plaid?.secretKey) {
+                    const plaidBaseUrl = plaid.baseUrl;
 
                     // Deduplicate access tokens — one item/remove call per linked item
                     const uniqueTokens = [...new Set(
@@ -249,8 +253,8 @@ router.delete('/:id', auth, async (req, res) => {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
-                                    client_id: settings.plaidClientKey,
-                                    secret: settings.plaidSecretKey,
+                                    client_id: plaid.clientKey,
+                                    secret: plaid.secretKey,
                                     access_token,
                                 }),
                             });

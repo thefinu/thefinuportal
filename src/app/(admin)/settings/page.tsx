@@ -37,7 +37,21 @@ export default function SettingsPage() {
         smtpUser: "",
         smtpPass: "",
         contactEmail: "",
+        // Development Environment
+        devEnabled: false,
+        devUsers: [] as string[],
+        devPlaidClientKey: "",
+        devPlaidSecretKey: "",
+        devPlaidEnvironment: "sandbox",
+        devPlaidWebhookUrl: "",
+        devStripePublicKey: "",
+        devStripeSecretKey: "",
+        devStripeWebhookSecret: "",
     });
+
+    const [activeTab, setActiveTab] = useState<"production" | "development">("production");
+    const [appUsers, setAppUsers] = useState<{ _id: string; email: string }[]>([]);
+    const [userSearch, setUserSearch] = useState("");
 
     // Plaid Pricing state
     const [pricing, setPricing] = useState<PlaidPricing[]>([]);
@@ -64,7 +78,27 @@ export default function SettingsPage() {
         };
         fetchSettings();
         fetchPricing();
+        // App users available for the Development Environment allowlist
+        api.get("/users")
+            .then(res => setAppUsers(Array.isArray(res.data) ? res.data : []))
+            .catch(err => console.error("Failed to fetch users", err));
     }, []);
+
+    const isDevUser = (email: string) =>
+        (settings.devUsers || []).some(e => (e || "").toLowerCase() === email.toLowerCase());
+
+    const toggleDevUser = (email: string) => {
+        setSettings(prev => {
+            const list = prev.devUsers || [];
+            const exists = list.some(e => (e || "").toLowerCase() === email.toLowerCase());
+            return {
+                ...prev,
+                devUsers: exists
+                    ? list.filter(e => (e || "").toLowerCase() !== email.toLowerCase())
+                    : [...list, email.toLowerCase()],
+            };
+        });
+    };
 
     const fetchPricing = async () => {
         setPricingLoading(true);
@@ -177,6 +211,27 @@ export default function SettingsPage() {
                 </div>
             </div>
 
+            {/* Tabs */}
+            <div className="mb-6 flex gap-1 border-b border-slate-200">
+                {([
+                    { id: "production", label: "Production" },
+                    { id: "development", label: "Development Environment" },
+                ] as const).map(tab => (
+                    <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`-mb-px px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+                            activeTab === tab.id
+                                ? "border-secondary text-secondary"
+                                : "border-transparent text-slate-500 hover:text-slate-700"
+                        }`}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
             {message.content && (
                 <div className={`mb-6 p-4 rounded-lg flex items-center ${message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
                     <Info className="mr-2 h-5 w-5" />
@@ -185,6 +240,8 @@ export default function SettingsPage() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-6">
+                {activeTab === "production" && (
+                <>
                 {/* Plaid Configuration */}
                 <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                     <div className="mb-4 flex items-center border-b border-slate-100 pb-4">
@@ -443,6 +500,152 @@ export default function SettingsPage() {
                     </div>
                 </div>
 
+                </>
+                )}
+
+                {activeTab === "development" && (
+                <>
+                    {/* Enable + explanation */}
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-6">
+                        <div className="flex items-start gap-3">
+                            <Info className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                            <div className="flex-1">
+                                <h2 className="text-sm font-bold text-amber-900">Development Environment</h2>
+                                <p className="mt-1 text-sm text-amber-800/80">
+                                    Selected users are served these <strong>test credentials</strong> instead of production —
+                                    they can link sandbox banks and run test payments inside the live app. Everyone else is unaffected.
+                                </p>
+                                <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm font-medium text-amber-900">
+                                    <input
+                                        type="checkbox"
+                                        checked={!!settings.devEnabled}
+                                        onChange={e => setSettings(prev => ({ ...prev, devEnabled: e.target.checked }))}
+                                        className="h-4 w-4 rounded border-amber-300 text-secondary focus:ring-secondary"
+                                    />
+                                    Enable Development Environment
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Test Plaid */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <div className="mb-4 flex items-center border-b border-slate-100 pb-4">
+                            <Key className="mr-2 h-5 w-5 text-secondary" />
+                            <h2 className="text-lg font-bold text-slate-900">Plaid (Test)</h2>
+                        </div>
+                        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Plaid Client Key</label>
+                                <input type="text" name="devPlaidClientKey" value={settings.devPlaidClientKey} onChange={handleChange}
+                                    className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none" placeholder="Test client ID" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Plaid Secret Key</label>
+                                <input type="password" name="devPlaidSecretKey" value={settings.devPlaidSecretKey} onChange={handleChange}
+                                    className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none" placeholder="Test secret" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Environment</label>
+                                <select name="devPlaidEnvironment" value={settings.devPlaidEnvironment} onChange={handleChange}
+                                    className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none bg-white">
+                                    <option value="sandbox">Sandbox</option>
+                                    <option value="production">Production</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Plaid Webhook URL</label>
+                                <input type="text" name="devPlaidWebhookUrl" value={settings.devPlaidWebhookUrl} onChange={handleChange}
+                                    className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none" placeholder="https://..." />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Test Stripe */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <div className="mb-4 flex items-center border-b border-slate-100 pb-4">
+                            <CreditCard className="mr-2 h-5 w-5 text-secondary" />
+                            <h2 className="text-lg font-bold text-slate-900">Stripe (Test)</h2>
+                        </div>
+                        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Stripe Public Key</label>
+                                <input type="text" name="devStripePublicKey" value={settings.devStripePublicKey} onChange={handleChange}
+                                    className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none" placeholder="pk_test_..." />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Stripe Secret Key</label>
+                                <input type="password" name="devStripeSecretKey" value={settings.devStripeSecretKey} onChange={handleChange}
+                                    className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none" placeholder="sk_test_..." />
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Stripe Webhook Secret</label>
+                                <input type="password" name="devStripeWebhookSecret" value={settings.devStripeWebhookSecret} onChange={handleChange}
+                                    className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none" placeholder="whsec_..." />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Allowlisted users */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-4">
+                            <div className="flex items-center">
+                                <Key className="mr-2 h-5 w-5 text-secondary" />
+                                <h2 className="text-lg font-bold text-slate-900">Users With Access</h2>
+                            </div>
+                            <span className="rounded-full bg-secondary/10 px-3 py-1 text-xs font-semibold text-secondary">
+                                {(settings.devUsers || []).length} selected
+                            </span>
+                        </div>
+
+                        <p className="mb-4 text-sm text-slate-500">
+                            These users will use the test credentials above. Everyone else stays on production.
+                        </p>
+
+                        <input
+                            type="text"
+                            value={userSearch}
+                            onChange={e => setUserSearch(e.target.value)}
+                            placeholder="Search users by email..."
+                            className="mb-3 w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none"
+                        />
+
+                        <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-100 divide-y divide-slate-100">
+                            {appUsers.filter(u => u.email?.toLowerCase().includes(userSearch.toLowerCase())).length === 0 ? (
+                                <p className="p-4 text-center text-sm text-slate-400">No users found</p>
+                            ) : (
+                                appUsers
+                                    .filter(u => u.email?.toLowerCase().includes(userSearch.toLowerCase()))
+                                    .map(u => (
+                                        <label key={u._id} className="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-slate-50">
+                                            <input
+                                                type="checkbox"
+                                                checked={isDevUser(u.email)}
+                                                onChange={() => toggleDevUser(u.email)}
+                                                className="h-4 w-4 rounded border-slate-300 text-secondary focus:ring-secondary"
+                                            />
+                                            <span className="text-sm text-slate-700">{u.email}</span>
+                                        </label>
+                                    ))
+                            )}
+                        </div>
+
+                        {(settings.devUsers || []).length > 0 && (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                                {(settings.devUsers || []).map(email => (
+                                    <span key={email} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                                        {email}
+                                        <button type="button" onClick={() => toggleDevUser(email)} className="text-slate-400 hover:text-rose-500">
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </>
+                )}
+
                 <div className="flex justify-end pt-4">
                     <button
                         type="submit"
@@ -465,6 +668,7 @@ export default function SettingsPage() {
             </form>
 
             {/* Plaid Pricing Model — separate from main settings form */}
+            {activeTab === "production" && (
             <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-4">
                     <div className="flex items-center">
@@ -628,6 +832,7 @@ export default function SettingsPage() {
                     </table>
                 )}
             </div>
+            )}
         </div>
     );
 }

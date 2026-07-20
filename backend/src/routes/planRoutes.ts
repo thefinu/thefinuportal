@@ -197,6 +197,7 @@ router.put('/:id', auth, async (req, res) => {
             }
             plan.monthlyPriceId = await createRecurringPrice(stripe, plan.stripeProductId, Number(monthlyAmount), cur, 'month');
             plan.monthlyAmount = Number(monthlyAmount);
+            plan.devMonthlyPriceId = ''; // stale — rebuilt lazily in the test account
         }
 
         // Yearly price changed → create a new price, archive the old
@@ -206,6 +207,7 @@ router.put('/:id', auth, async (req, res) => {
             }
             plan.yearlyPriceId = await createRecurringPrice(stripe, plan.stripeProductId, Number(yearlyAmount), cur, 'year');
             plan.yearlyAmount = Number(yearlyAmount);
+            plan.devYearlyPriceId = ''; // stale — rebuilt lazily in the test account
         }
 
         // Monthly sale price changed → create a new price (or clear), archive the old
@@ -215,6 +217,7 @@ router.put('/:id', auth, async (req, res) => {
             }
             plan.saleMonthlyPriceId = await createRecurringPrice(stripe, plan.stripeProductId, Number(saleMonthlyAmount), cur, 'month');
             plan.saleMonthlyAmount = Number(saleMonthlyAmount);
+            plan.devSaleMonthlyPriceId = ''; // stale — rebuilt lazily in the test account
         }
 
         // Yearly sale price changed → create a new price (or clear), archive the old
@@ -224,6 +227,7 @@ router.put('/:id', auth, async (req, res) => {
             }
             plan.saleYearlyPriceId = await createRecurringPrice(stripe, plan.stripeProductId, Number(saleYearlyAmount), cur, 'year');
             plan.saleYearlyAmount = Number(saleYearlyAmount);
+            plan.devSaleYearlyPriceId = ''; // stale — rebuilt lazily in the test account
         }
 
         if (name !== undefined) plan.name = name;

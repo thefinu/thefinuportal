@@ -31,10 +31,14 @@ router.post('/', async (req, res) => {
 // Store Plaid accounts (authenticated GAS clients)
 router.post('/store-plaid', gasAuth, async (req, res) => {
     try {
-        const { email, plaid_item_id, access_token, accounts, metadata } = req.body;
+        const { plaid_item_id, access_token, accounts, metadata } = req.body;
+
+        // Bind stored Plaid credentials to the OAuth-verified caller, so accounts
+        // cannot be written against another user's record.
+        const email = (req as any).gasUser?.email;
 
         if (!email) {
-            return res.status(400).json({ message: 'Email is required' });
+            return res.status(401).json({ message: 'Authenticated user email is required' });
         }
 
         const user = await User.findOne({ email });
@@ -160,6 +164,13 @@ router.get('/get-by-email/:email', gasAuth, async (req, res) => {
 
         if (!email) {
             return res.status(400).json({ message: 'Email is required' });
+        }
+
+        // Callers may only read their own accounts — these records hold Plaid
+        // access tokens, so the requested email must match the verified identity.
+        const callerEmail = (req as any).gasUser?.email;
+        if (!callerEmail || callerEmail.toLowerCase() !== email.toLowerCase()) {
+            return res.status(403).json({ message: 'You may only access your own accounts' });
         }
 
         const user = await User.findOne({ email });
