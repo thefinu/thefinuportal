@@ -145,9 +145,8 @@ export default function AccountsPage() {
                                 <tr className="text-xs font-semibold uppercase tracking-wider">
                                     <th className="px-6 py-4 bg-secondary text-white">Account Name</th>
                                     <th className="px-6 py-4 bg-secondary text-white">User Email</th>
-                                    <th className="px-6 py-4 bg-secondary text-white">Link Status</th>
-                                    <th className="px-6 py-4 bg-secondary text-white">Status</th>
-                                    <th className="px-6 py-4 bg-secondary text-white">Created At</th>
+                                    <th className="px-6 py-4 bg-secondary text-white text-center">Link Status</th>
+                                    <th className="px-6 py-4 bg-secondary text-white text-center">Sync Status</th>
                                     <th className="px-6 py-4 bg-secondary text-white">Last Update</th>
                                     <th className="px-6 py-4 bg-secondary text-white text-center">Action</th>
                                 </tr>
@@ -173,32 +172,29 @@ export default function AccountsPage() {
                                                     {acc.user_id?.email || "No Email"}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-6 py-4 text-center">
                                                 {acc.is_linked ? (
-                                                    <span className="inline-flex items-center text-emerald-600 text-xs font-medium bg-emerald-50 px-2 py-1 rounded-full">
-                                                        <CheckCircle2 className="mr-1 h-3 w-3" />
+                                                    <span className="inline-flex items-center text-emerald-700 text-xs font-semibold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+                                                        <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
                                                         Linked
                                                     </span>
                                                 ) : (
-                                                    <span className="inline-flex items-center text-amber-600 text-xs font-medium bg-amber-50 px-2 py-1 rounded-full">
-                                                        <XCircle className="mr-1 h-3 w-3" />
+                                                    <span className="inline-flex items-center text-amber-700 text-xs font-semibold bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                                                        <XCircle className="mr-1.5 h-3.5 w-3.5" />
                                                         Pending
                                                     </span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-6 py-4 text-center">
                                                 {acc.is_update ? (
-                                                    <span className="text-amber-600 text-xs font-medium bg-amber-50 px-2 py-1 rounded-full">
-                                                        Sync pending
+                                                    <span className="inline-flex items-center text-amber-700 text-xs font-semibold bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                                                        Sync Pending
                                                     </span>
                                                 ) : (
-                                                    <span className="text-emerald-600 text-xs font-medium bg-emerald-50 px-2 py-1 rounded-full">
-                                                        Up to date
+                                                    <span className="inline-flex items-center text-emerald-700 text-xs font-semibold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+                                                        Up to Date
                                                     </span>
                                                 )}
-                                            </td>
-                                            <td className="px-6 py-4 text-sm text-slate-500">
-                                                {acc.createdAt ? new Date(acc.createdAt).toLocaleDateString() : "N/A"}
                                             </td>
                                             <td className="px-6 py-4 text-sm text-slate-500">
                                                 {acc.updatedAt ? new Date(acc.updatedAt).toLocaleDateString() : "N/A"}
@@ -223,7 +219,7 @@ export default function AccountsPage() {
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan={7} className="px-6 py-10 text-center text-slate-500">
+                                        <td colSpan={6} className="px-6 py-10 text-center text-slate-500">
                                             No accounts found.
                                         </td>
                                     </tr>
