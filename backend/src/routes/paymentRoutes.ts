@@ -566,12 +566,14 @@ async function handleSubscriptionUpdated(stripeSubscription: Stripe.Subscription
         : null;
     await sub.save();
 
-    // Sync to user
-    await User.findByIdAndUpdate(sub.userId, {
-        currentPeriodEnd: sub.currentPeriodEnd,
-        cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
-        trialEnd: sub.trialEnd,
-    });
+    // Sync to user — but skip free users whose subscription data was intentionally cleared
+    const user = await User.findById(sub.userId);
+    if (user && !user.isFreeUser) {
+        user.currentPeriodEnd = sub.currentPeriodEnd;
+        user.cancelAtPeriodEnd = sub.cancelAtPeriodEnd;
+        user.trialEnd = sub.trialEnd;
+        await user.save();
+    }
 }
 
 /**
