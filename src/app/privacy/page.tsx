@@ -33,7 +33,7 @@ export default async function PrivacyPage() {
                     <p className="text-slate-500 mb-6 border-b border-slate-100 pb-6 text-sm">Updated {updatedDate}</p>
 
                     {customContent ? (
-                        <div className="prose prose-slate max-w-none space-y-6 text-slate-700 leading-relaxed text-sm" dangerouslySetInnerHTML={{ __html: customContent }} />
+                        <div className="prose prose-slate max-w-none space-y-6 text-slate-700 leading-relaxed text-sm" dangerouslySetInnerHTML={{ __html: customContent.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/on\w+\s*=/gi, 'data-blocked=') }} />
                     ) : (
                     <div className="prose prose-slate max-w-none space-y-6 text-slate-700 leading-relaxed text-sm">
                         <p className="text-sm text-slate-600 leading-relaxed">

@@ -43,7 +43,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between border-b border-primary/10 pb-6">
         <div>
           <h1 className="text-3xl font-extrabold text-primary">Financial Overview</h1>
-          <p className="text-slate-500 mt-1">Welcome back, <span className="text-secondary font-semibold">Chris Anna!</span></p>
+          <p className="text-slate-500 mt-1">Welcome back, <span className="text-secondary font-semibold">Admin</span></p>
         </div>
       </div>
 

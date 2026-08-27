@@ -403,9 +403,10 @@ export default function HomePage() {
     const [checkoutBusy, setCheckoutBusy] = useState<string | null>(null);
 
     useEffect(() => {
+        const ac = new AbortController();
         setIsVisible(true);
         const load = (section: string, setter: (d: any) => void) =>
-            fetch(`${API_URL}/content/${section}`).then(r => r.json()).then(({ data }) => { if (data) setter(data); }).catch(() => {});
+            fetch(`${API_URL}/content/${section}`, { signal: ac.signal }).then(r => r.json()).then(({ data }) => { if (data) setter(data); }).catch(() => {});
         load("home_hero", setHero);
         load("home_features", setFeatures);
         load("home_steps", setStepsCms);
@@ -413,16 +414,16 @@ export default function HomePage() {
         load("home_cta", setCta);
         load("home_install", setInstallBtn);
 
-        fetch(`${API_URL}/plans/public`)
+        fetch(`${API_URL}/plans/public`, { signal: ac.signal })
             .then(r => r.json())
             .then((data) => {
                 if (Array.isArray(data) && data.length > 0) {
                     setPlans(data);
-                    // Default the toggle to whichever interval the plans actually offer
                     if (!data.some((p: PublicPlan) => p.yearlyAmount > 0)) setBillingInterval("monthly");
                 }
             })
             .catch(() => {});
+        return () => ac.abort();
     }, []);
 
     const handleSubscribe = async (plan: PublicPlan) => {
