@@ -178,8 +178,8 @@ router.post('/plaid-webhook', async (req, res) => {
         res.status(200).json({ received: true });
     } catch (err: any) {
         console.error('Error handling Plaid webhook:', err);
-        // Still return 200/400/500? Plaid recommends 200 if you received it but failed to process to avoid retries if it's not a temporary failure
-        res.status(500).json({ message: err.message });
+        // Always return 200 to Plaid to acknowledge receipt and prevent infinite retries
+        res.status(200).json({ received: true, error: err.message });
     }
 });
 

@@ -4,6 +4,10 @@ import Settings from '../models/Settings.js';
 
 const router = Router();
 
+function escapeHtml(str: string): string {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 async function getMailerConfig() {
     const settings = await Settings.findOne();
     const host = settings?.smtpHost || process.env.SMTP_HOST || 'smtp.gmail.com';
@@ -37,13 +41,13 @@ router.post('/', async (req: Request, res: Response) => {
             from: `"${firstName} ${lastName}" <${user}>`,
             replyTo: email,
             to: contactEmail,
-            subject: `New Contact Message from ${firstName} ${lastName}`,
+            subject: `New Contact Message from ${escapeHtml(firstName)} ${escapeHtml(lastName)}`,
             html: `
                 <h2>New Contact Form Submission</h2>
-                <p><strong>Name:</strong> ${firstName} ${lastName}</p>
-                <p><strong>Email:</strong> ${email}</p>
+                <p><strong>Name:</strong> ${escapeHtml(firstName)} ${escapeHtml(lastName)}</p>
+                <p><strong>Email:</strong> ${escapeHtml(email)}</p>
                 <p><strong>Message:</strong></p>
-                <p>${message}</p>
+                <p>${escapeHtml(message)}</p>
             `,
         });
 
@@ -69,14 +73,14 @@ router.post('/feature-request', async (req: Request, res: Response) => {
             from: `"${firstName}" <${user}>`,
             replyTo: email,
             to: contactEmail,
-            subject: `Feature Request: ${feature} — from ${firstName}`,
+            subject: `Feature Request: ${escapeHtml(feature)} — from ${escapeHtml(firstName)}`,
             html: `
                 <h2>New Feature Request</h2>
-                <p><strong>Name:</strong> ${firstName}</p>
-                <p><strong>Email:</strong> ${email}</p>
-                <p><strong>Feature:</strong> ${feature}</p>
+                <p><strong>Name:</strong> ${escapeHtml(firstName)}</p>
+                <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+                <p><strong>Feature:</strong> ${escapeHtml(feature)}</p>
                 <p><strong>Details:</strong></p>
-                <p>${details}</p>
+                <p>${escapeHtml(details)}</p>
             `,
         });
 

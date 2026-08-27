@@ -7,6 +7,7 @@ import Account from '../models/Account.js';
 import Transaction from '../models/Transaction.js';
 import UserSpreadsheet from '../models/UserSpreadsheet.js';
 import Plan from '../models/Plan.js';
+import { auth } from '../middleware/authMiddleware.js';
 import { gasAuth, type GasAuthRequest } from '../middleware/gasAuthMiddleware.js';
 import { refundSubscription } from '../utils/stripeRefund.js';
 import { getStripe } from '../utils/stripeClient.js';
@@ -578,7 +579,7 @@ async function handleSubscriptionUpdated(stripeSubscription: Stripe.Subscription
  * @desc    Extend trial period for a subscription (Admin)
  *          Can be used to give free days/months by setting a future trial_end on Stripe
  */
-router.post('/extend-trial', async (req, res) => {
+router.post('/extend-trial', auth, async (req, res) => {
     try {
         const { subscriptionId, days } = req.body;
 
@@ -635,7 +636,7 @@ router.post('/extend-trial', async (req, res) => {
  * @route   GET /api/payment/subscriptions
  * @desc    Get all subscriptions (Admin)
  */
-router.get('/subscriptions', async (req, res) => {
+router.get('/subscriptions', auth, async (req, res) => {
     try {
         const subscriptions = await Subscription.find().populate('userId', 'email').sort({ createdAt: -1 });
         res.json(subscriptions);

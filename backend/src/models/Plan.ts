@@ -23,6 +23,14 @@ export interface IPlan extends Document {
     highlighted: boolean;
     badge: string;
     displayOrder: number;
+
+    // Mirrored copies in the TEST Stripe account, used by Development Environment
+    // users. Created lazily and cleared whenever an amount changes.
+    devStripeProductId: string;
+    devMonthlyPriceId: string;
+    devYearlyPriceId: string;
+    devSaleMonthlyPriceId: string;
+    devSaleYearlyPriceId: string;
 }
 
 const PlanSchema: Schema = new Schema({
@@ -44,6 +52,13 @@ const PlanSchema: Schema = new Schema({
     highlighted: { type: Boolean, default: false },
     badge: { type: String, default: '' },
     displayOrder: { type: Number, default: 0 },
+
+    // TEST-account mirrors (Development Environment)
+    devStripeProductId: { type: String, default: '' },
+    devMonthlyPriceId: { type: String, default: '' },
+    devYearlyPriceId: { type: String, default: '' },
+    devSaleMonthlyPriceId: { type: String, default: '' },
+    devSaleYearlyPriceId: { type: String, default: '' },
 }, { timestamps: true });
 
 export default mongoose.model<IPlan>('Plan', PlanSchema);

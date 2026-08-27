@@ -18,6 +18,10 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
     const transaction = new Transaction(req.body);
     try {
+        if (!transaction.amount || !isFinite(transaction.amount)) {
+            return res.status(400).json({ message: 'amount must be a valid number' });
+        }
+
         const newTransaction = await transaction.save();
 
         // Update account balance

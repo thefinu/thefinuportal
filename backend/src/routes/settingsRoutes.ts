@@ -3,6 +3,7 @@ import { GoogleAuth } from 'google-auth-library';
 import Settings from '../models/Settings.js';
 import { gasAuth, type GasAuthRequest } from '../middleware/gasAuthMiddleware.js';
 import { auth } from '../middleware/authMiddleware.js';
+import { resolvePlaidCredentials, resolveStripeCredentials } from '../utils/envCredentials.js';
 
 const router = express.Router();
 
@@ -50,20 +51,25 @@ router.get('/', async (req, res, next) => {
         // GAS client — validate via Google tokeninfo
         return gasAuth(req as any, res, async () => {
             try {
-                let settings = await Settings.findOne();
-                if (!settings) {
-                    settings = await Settings.create({});
-                }
+                let settings = await Settings.findOneAndUpdate({}, {}, { upsert: true, new: true });
+
+                // Users on the Development Environment allowlist get the TEST
+                // credentials, so the add-on runs against sandbox transparently.
+                const userEmail = (req as any).gasUser?.email;
+                const plaid = resolvePlaidCredentials(settings, userEmail);
+                const stripe = resolveStripeCredentials(settings, userEmail);
+
                 res.json({
-                    plaidClientKey: settings.plaidClientKey,
-                    plaidSecretKey: settings.plaidSecretKey,
-                    plaidEnvironment: settings.plaidEnvironment,
-                    plaidWebhookUrl: settings.plaidWebhookUrl,
+                    plaidClientKey: plaid.clientKey,
+                    plaidSecretKey: plaid.secretKey,
+                    plaidEnvironment: plaid.environment,
+                    plaidWebhookUrl: plaid.webhookUrl,
                     spreadsheetTemplateUrl: settings.spreadsheetTemplateUrl,
                     appInstruction: settings.appInstruction,
                     appEmail: settings.appEmail,
-                    stripePublicKey: settings.stripePublicKey,
-                    stripePaymentMode: settings.stripePaymentMode
+                    stripePublicKey: stripe.publicKey,
+                    stripePaymentMode: plaid.isDev ? 'sandbox' : settings.stripePaymentMode,
+                    isDevEnvironment: plaid.isDev
                     // stripeSecretKey intentionally omitted — checkout sessions created server-side
                 });
             } catch (err: any) {
@@ -74,10 +80,7 @@ router.get('/', async (req, res, next) => {
         // Admin JWT — return all fields
         return auth(req as any, res, async () => {
             try {
-                let settings = await Settings.findOne();
-                if (!settings) {
-                    settings = await Settings.create({});
-                }
+                let settings = await Settings.findOneAndUpdate({}, {}, { upsert: true, new: true });
                 res.json(settings);
             } catch (err: any) {
                 res.status(500).json({ message: err.message });

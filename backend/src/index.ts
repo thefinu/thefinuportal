@@ -70,14 +70,7 @@ app.get('/', (req, res) => {
     res.send('Financial Portal API is running');
 });
 
-app.use('/api', apiRouter);
-
-// Start server immediately so Cloud Run health check passes
-app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`🚀 Server is running on port ${PORT}`);
-});
-
-// Database Connection
+// Database Connection — connect before accepting API requests
 const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {
@@ -85,12 +78,32 @@ if (!MONGODB_URI) {
     process.exit(1);
 }
 
+// Track DB readiness so the health check can pass while routes wait
+let dbReady = false;
+
+// Health check responds immediately (Cloud Run requirement), but API routes
+// return 503 until MongoDB is connected.
+app.use('/api', (req, res, next) => {
+    if (!dbReady) {
+        return res.status(503).json({ message: 'Database is connecting, please retry shortly' });
+    }
+    next();
+});
+
+app.use('/api', apiRouter);
+
 console.log('Connecting to MongoDB...');
 mongoose.connect(MONGODB_URI)
     .then(() => {
         console.log('✅ Connected to MongoDB Atlas');
+        dbReady = true;
     })
     .catch((err) => {
         console.error('❌ MongoDB connection error:', err);
         process.exit(1);
     });
+
+// Start server — health check (GET /) works immediately, API routes gate on dbReady
+app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`🚀 Server is running on port ${PORT}`);
+});

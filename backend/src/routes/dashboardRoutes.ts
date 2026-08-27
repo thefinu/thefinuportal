@@ -14,9 +14,12 @@ router.get('/stats', async (req, res) => {
         const totalAccounts = await Account.countDocuments();
         const activeAccounts = await Account.countDocuments({ status: true });
 
-        // Calculate total revenue from active subscriptions
-        const subscriptions = await Subscription.find({ status: { $in: ['active', 'paid'] } });
-        const totalRevenue = subscriptions.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+        // Calculate total revenue from active subscriptions using aggregation
+        const revenueAgg = await Subscription.aggregate([
+            { $match: { status: { $in: ['active', 'paid'] } } },
+            { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]);
+        const totalRevenue = revenueAgg[0]?.total || 0;
 
         res.json({
             totalUsers,

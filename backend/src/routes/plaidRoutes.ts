@@ -78,7 +78,10 @@ router.get('/usage', auth, async (req, res) => {
 // GET /api/plaid/usage/user/:userId/monthly — monthly invoice summary (admin)
 router.get('/usage/user/:userId/monthly', auth, async (req, res) => {
     try {
-        const { userId } = req.params;
+        const userId = req.params.userId as string;
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ message: 'Invalid user ID format' });
+        }
         const now = new Date();
         const year  = parseInt(req.query.year  as string) || now.getFullYear();
         const month = parseInt(req.query.month as string) || now.getMonth() + 1;
@@ -130,6 +133,9 @@ router.get('/usage/user/:userId/monthly', auth, async (req, res) => {
 // GET /api/plaid/usage/user/:userId — get usage for a specific user (admin)
 router.get('/usage/user/:userId', auth, async (req, res) => {
     try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.userId as string)) {
+            return res.status(400).json({ message: 'Invalid user ID format' });
+        }
         const usage = await PlaidUsage.find({ userId: new mongoose.Types.ObjectId(req.params.userId) })
             .populate('productId', 'product rate perCall perMonth')
             .sort({ createdAt: -1 });
