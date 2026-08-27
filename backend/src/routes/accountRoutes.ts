@@ -1,6 +1,8 @@
 import express from 'express';
 import Account from '../models/Account.js';
 import User from '../models/User.js';
+import Settings from '../models/Settings.js';
+import { auth } from '../middleware/authMiddleware.js';
 import { gasAuth } from '../middleware/gasAuthMiddleware.js';
 
 const router = express.Router();
@@ -11,6 +13,52 @@ router.get('/', async (req, res) => {
         const accounts = await Account.find().populate('user_id', 'email isSubscribed cancelAtPeriodEnd currentPeriodEnd');
         res.json(accounts);
     } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Admin: Delete account by MongoDB _id, remove from Plaid if last account for that item
+router.delete('/admin/:id', auth, async (req, res) => {
+    try {
+        const account = await Account.findById(req.params.id);
+        if (!account) {
+            return res.status(404).json({ message: 'Account not found' });
+        }
+
+        const itemId = account.item_id;
+        const accessToken = account.access_token;
+
+        await Account.findByIdAndDelete(req.params.id);
+
+        // If this was the last account for the Plaid item, remove the item from Plaid
+        if (itemId && accessToken) {
+            const remaining = await Account.countDocuments({ item_id: itemId });
+            if (remaining === 0) {
+                try {
+                    const settings = await Settings.findOne();
+                    if (settings?.plaidClientKey && settings?.plaidSecretKey) {
+                        const plaidBaseUrl = `https://${settings.plaidEnvironment || 'sandbox'}.plaid.com`;
+                        const plaidRes = await fetch(`${plaidBaseUrl}/item/remove`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                client_id: settings.plaidClientKey,
+                                secret: settings.plaidSecretKey,
+                                access_token: accessToken,
+                            }),
+                        });
+                        const plaidResult = await plaidRes.json();
+                        console.log(`Plaid item/remove for ${itemId}:`, plaidResult);
+                    }
+                } catch (plaidErr) {
+                    console.error('Plaid item removal failed (non-blocking):', plaidErr);
+                }
+            }
+        }
+
+        res.status(200).json({ message: 'Account deleted successfully' });
+    } catch (err: any) {
+        console.error('Error deleting account:', err);
         res.status(500).json({ message: err.message });
     }
 });
@@ -168,11 +216,28 @@ router.get('/get-by-email/:email', gasAuth, async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const accounts = await Account.find({ user_id: user._id, status: true });
+        const accounts = await Account.find({ user_id: user._id });
 
         res.status(200).json(accounts);
     } catch (err: any) {
         console.error('Error fetching accounts by email:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Delete account by account_id (authenticated GAS clients)
+router.delete('/remove/:account_id', gasAuth, async (req, res) => {
+    try {
+        const account_id = req.params.account_id as string;
+        const account = await Account.findOneAndDelete({ account_id } as any);
+
+        if (!account) {
+            return res.status(404).json({ message: 'Account not found' });
+        }
+
+        res.status(200).json({ message: 'Account deleted successfully' });
+    } catch (err: any) {
+        console.error('Error deleting account:', err);
         res.status(500).json({ message: err.message });
     }
 });
