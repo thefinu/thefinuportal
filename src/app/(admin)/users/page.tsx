@@ -60,6 +60,8 @@ export default function UsersPage() {
     const [freeUserModal, setFreeUserModal] = useState<User | null>(null);
     const [settingFreeUser, setSettingFreeUser] = useState(false);
     const [freeUserMessage, setFreeUserMessage] = useState({ type: "", content: "" });
+    const [currentPage, setCurrentPage] = useState(1);
+    const PAGE_SIZE = 20;
 
     // API Usage modal
     const [usageModal, setUsageModal] = useState<User | null>(null);
@@ -165,6 +167,18 @@ export default function UsersPage() {
         user.email?.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+    const safePage = Math.min(currentPage, totalPages);
+    const paginatedUsers = filteredUsers.slice(
+        (safePage - 1) * PAGE_SIZE,
+        safePage * PAGE_SIZE
+    );
+
+    // Reset to page 1 when search changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm]);
+
     const subtotal   = monthlyUsage?.subtotal ?? 0;
     const tax        = 0;
     const total      = subtotal + tax;
@@ -213,14 +227,14 @@ export default function UsersPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {filteredUsers.length === 0 ? (
+                            {paginatedUsers.length === 0 ? (
                                 <tr>
                                     <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
                                         No users found
                                     </td>
                                 </tr>
                             ) : (
-                                filteredUsers.map((user) => (
+                                paginatedUsers.map((user) => (
                                     <tr key={user._id} className="hover:bg-slate-50 transition-colors">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center">
@@ -268,7 +282,7 @@ export default function UsersPage() {
                                                         className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
                                                     >
                                                         <ShieldCheck className="mr-1 h-3.5 w-3.5" />
-                                                        Set Free
+                                                        Set as Free User
                                                     </button>
                                                 )}
                                                 <button
@@ -285,6 +299,55 @@ export default function UsersPage() {
                             )}
                         </tbody>
                     </table>
+                )}
+
+                {/* Pagination */}
+                {!loading && filteredUsers.length > PAGE_SIZE && (
+                    <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4">
+                        <p className="text-sm text-slate-500">
+                            Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filteredUsers.length)} of {filteredUsers.length}
+                        </p>
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                disabled={safePage === 1}
+                                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                            </button>
+                            {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                .filter((p) => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                                .reduce<(number | "...")[]>((acc, p, i, arr) => {
+                                    if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("...");
+                                    acc.push(p);
+                                    return acc;
+                                }, [])
+                                .map((p, i) =>
+                                    p === "..." ? (
+                                        <span key={`dots-${i}`} className="px-2 text-slate-400">…</span>
+                                    ) : (
+                                        <button
+                                            key={p}
+                                            onClick={() => setCurrentPage(p as number)}
+                                            className={`min-w-[2rem] rounded-lg px-2 py-1 text-sm font-medium transition-colors ${
+                                                safePage === p
+                                                    ? "bg-secondary text-white"
+                                                    : "text-slate-600 hover:bg-slate-100"
+                                            }`}
+                                        >
+                                            {p}
+                                        </button>
+                                    )
+                                )}
+                            <button
+                                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                disabled={safePage === totalPages}
+                                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent"
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </button>
+                        </div>
+                    </div>
                 )}
             </div>
 

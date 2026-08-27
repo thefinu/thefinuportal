@@ -24,6 +24,7 @@ export const getDashboardStats = () => api.get('/dashboard/stats');
 export const getAccountById = (id: string) => api.get(`/accounts/${id}`);
 export const createAccount = (data: Record<string, unknown>) => api.post('/accounts', data);
 export const updateAccount = (accountId: string, data: Record<string, unknown>) => api.patch(`/accounts/update-account/${accountId}`, data);
+export const deleteAccount = (id: string) => api.delete(`/accounts/admin/${id}`);
 export const unsubscribeUser = (email: string) => api.post('/payment/unsubscribe', { email });
 export const setFreeUser = (userId: string) => api.post(`/users/${userId}/set-free-user`);
 
