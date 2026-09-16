@@ -18,6 +18,7 @@ export interface IAccount extends Document {
     is_linked: boolean;
     linked_date?: Date;
     next_cursor?: string;
+    plaidEnv?: 'sandbox' | 'production' | 'unknown';
     status: boolean;
     is_update: boolean;
     isSubscribed: boolean;
@@ -40,6 +41,13 @@ const AccountSchema: Schema = new Schema({
     account_subtype: { type: String },
     mask: { type: String },
     account_name: { type: String },
+
+    // Which Plaid environment this account's access_token belongs to. A sandbox token
+    // is meaningless in production and vice versa, and nothing recorded which was
+    // which: changing the environment setting silently pointed old tokens at the
+    // wrong Plaid. Records written before this field exists are left unset and are
+    // treated as production — see utils/recordMode.
+    plaidEnv: { type: String, enum: ['sandbox', 'production', 'unknown'], default: undefined },
 
     // Additional Defaults
     is_linked: { type: Boolean, default: false },

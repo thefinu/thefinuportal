@@ -13,14 +13,19 @@ import paymentRoutes from './routes/paymentRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
 import plaidRoutes from './routes/plaidRoutes.js';
+import plaidProxyRoutes from './routes/plaidProxyRoutes.js';
 import contentRoutes from './routes/contentRoutes.js';
 import planRoutes from './routes/planRoutes.js';
+import { rateLimit } from './middleware/rateLimit.js';
 
 console.log('Starting server...');
 dotenv.config();
 console.log('Dotenv configured');
 
 const app = express();
+// Cloud Run sits behind one Google front end. Trust it so req.ip is the client's
+// address, which the rate limits below are keyed on.
+app.set('trust proxy', 1);
 console.log('Express app initialized');
 const PORT = process.env.PORT || 5000;
 console.log(`Port defined: ${PORT}`);
@@ -52,6 +57,14 @@ app.use(cors({
 app.use(helmet());
 app.use(morgan('dev'));
 
+// Rate limits on unauthenticated endpoints that cost something per call: password
+// guessing, outbound email and Stripe lookups. Held in memory per instance, so across
+// several Cloud Run instances they limit each one separately.
+app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }));
+app.use('/api/contact', rateLimit({ windowMs: 60 * 60 * 1000, max: 5 }));
+app.use('/api/payment/verify-session', rateLimit({ windowMs: 15 * 60 * 1000, max: 30 }));
+app.use('/api/payment/create-website-checkout', rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
+
 // Routes
 const apiRouter = express.Router();
 apiRouter.use('/transactions', transactionRoutes);
@@ -62,6 +75,10 @@ apiRouter.use('/users', userRoutes);
 apiRouter.use('/payment', paymentRoutes);
 apiRouter.use('/dashboard', dashboardRoutes);
 apiRouter.use('/contact', contactRoutes);
+// Server-side Plaid calls for the add-on. Mounted before plaidRoutes on the same path:
+// the two use different sub-paths, and anything this router does not handle falls
+// through to the existing usage and pricing routes.
+apiRouter.use('/plaid', plaidProxyRoutes);
 apiRouter.use('/plaid', plaidRoutes);
 apiRouter.use('/content', contentRoutes);
 apiRouter.use('/plans', planRoutes);
@@ -70,7 +87,14 @@ app.get('/', (req, res) => {
     res.send('Financial Portal API is running');
 });
 
-// Database Connection — connect before accepting API requests
+app.use('/api', apiRouter);
+
+// Start server immediately so Cloud Run health check passes
+app.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`🚀 Server is running on port ${PORT}`);
+});
+
+// Database Connection
 const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {
@@ -78,32 +102,12 @@ if (!MONGODB_URI) {
     process.exit(1);
 }
 
-// Track DB readiness so the health check can pass while routes wait
-let dbReady = false;
-
-// Health check responds immediately (Cloud Run requirement), but API routes
-// return 503 until MongoDB is connected.
-app.use('/api', (req, res, next) => {
-    if (!dbReady) {
-        return res.status(503).json({ message: 'Database is connecting, please retry shortly' });
-    }
-    next();
-});
-
-app.use('/api', apiRouter);
-
 console.log('Connecting to MongoDB...');
 mongoose.connect(MONGODB_URI)
     .then(() => {
         console.log('✅ Connected to MongoDB Atlas');
-        dbReady = true;
     })
     .catch((err) => {
         console.error('❌ MongoDB connection error:', err);
         process.exit(1);
     });
-
-// Start server — health check (GET /) works immediately, API routes gate on dbReady
-app.listen(Number(PORT), '0.0.0.0', () => {
-    console.log(`🚀 Server is running on port ${PORT}`);
-});

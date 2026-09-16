@@ -4,8 +4,26 @@ import Settings from '../models/Settings.js';
 import { gasAuth, type GasAuthRequest } from '../middleware/gasAuthMiddleware.js';
 import { auth } from '../middleware/authMiddleware.js';
 import { resolvePlaidCredentials, resolveStripeCredentials } from '../utils/envCredentials.js';
+import { findUserByEmail } from '../utils/userLookup.js';
+import { plaidProxyOnly } from '../utils/plaidProxyOnly.js';
 
 const router = express.Router();
+
+// Secret fields are never sent to the browser. The admin screen shows this mask
+// instead, and POST treats it as "leave unchanged".
+const SECRET_MASK = '********';
+const SECRET_FIELDS = [
+    'plaidSecretKey', 'stripeSecretKey', 'stripeWebhookSecret', 'smtpPass',
+    'devPlaidSecretKey', 'devStripeSecretKey', 'devStripeWebhookSecret',
+];
+
+function maskSecrets(settings: any) {
+    const plain = typeof settings?.toObject === 'function' ? settings.toObject() : { ...settings };
+    for (const field of SECRET_FIELDS) {
+        if (plain[field]) plain[field] = SECRET_MASK;
+    }
+    return plain;
+}
 
 // Get public settings (safe for app/frontend usage — no secrets)
 router.get('/public', async (req, res) => {
@@ -51,7 +69,10 @@ router.get('/', async (req, res, next) => {
         // GAS client — validate via Google tokeninfo
         return gasAuth(req as any, res, async () => {
             try {
-                let settings = await Settings.findOneAndUpdate({}, {}, { upsert: true, new: true });
+                let settings = await Settings.findOne();
+                if (!settings) {
+                    settings = await Settings.create({});
+                }
 
                 // Users on the Development Environment allowlist get the TEST
                 // credentials, so the add-on runs against sandbox transparently.
@@ -59,9 +80,19 @@ router.get('/', async (req, res, next) => {
                 const plaid = resolvePlaidCredentials(settings, userEmail);
                 const stripe = resolveStripeCredentials(settings, userEmail);
 
+                // Plaid credentials only for users with an active plan: anyone who installed
+                // the add-on could otherwise obtain them. The setup wizard needs only the
+                // non-secret fields below before subscribing.
+                const caller = userEmail ? await findUserByEmail(userEmail) : null;
+                const mayUsePlaid = !!caller && (caller.isSubscribed || caller.isFreeUser);
+
+                // Once every add-on install calls /api/plaid/*, the keys stop being sent
+                // at all. Off by default — see utils/plaidProxyOnly.
+                const mayHoldKeys = mayUsePlaid && !plaidProxyOnly();
+
                 res.json({
-                    plaidClientKey: plaid.clientKey,
-                    plaidSecretKey: plaid.secretKey,
+                    plaidClientKey: mayHoldKeys ? plaid.clientKey : '',
+                    plaidSecretKey: mayHoldKeys ? plaid.secretKey : '',
                     plaidEnvironment: plaid.environment,
                     plaidWebhookUrl: plaid.webhookUrl,
                     spreadsheetTemplateUrl: settings.spreadsheetTemplateUrl,
@@ -69,7 +100,11 @@ router.get('/', async (req, res, next) => {
                     appEmail: settings.appEmail,
                     stripePublicKey: stripe.publicKey,
                     stripePaymentMode: plaid.isDev ? 'sandbox' : settings.stripePaymentMode,
-                    isDevEnvironment: plaid.isDev
+                    isDevEnvironment: plaid.isDev,
+                    // Tells the add-on this server can make Plaid calls on its behalf
+                    // (/api/plaid/*), so it does not need the keys above. Older add-on
+                    // builds ignore the flag and keep calling Plaid directly.
+                    plaidProxy: true
                     // stripeSecretKey intentionally omitted — checkout sessions created server-side
                 });
             } catch (err: any) {
@@ -80,8 +115,13 @@ router.get('/', async (req, res, next) => {
         // Admin JWT — return all fields
         return auth(req as any, res, async () => {
             try {
-                let settings = await Settings.findOneAndUpdate({}, {}, { upsert: true, new: true });
-                res.json(settings);
+                let settings = await Settings.findOne();
+                if (!settings) {
+                    settings = await Settings.create({});
+                }
+                // Masked: any script running in the admin panel could otherwise read live
+                // Stripe, Plaid and SMTP secrets.
+                res.json(maskSecrets(settings));
             } catch (err: any) {
                 res.status(500).json({ message: err.message });
             }
@@ -379,6 +419,7 @@ router.post('/prepare-template', gasAuth, async (req: GasAuthRequest, res) => {
             }).catch(() => {});
             return res.status(502).json({ success: false, message: 'Could not grant SA access to temp file.' });
         }
+        const saPermissionId: string | undefined = ((await permRes.json().catch(() => ({}))) as any).id;
 
         // 5. Get template sheet metadata
         const metaRes = await fetch(
@@ -477,6 +518,14 @@ router.post('/prepare-template', gasAuth, async (req: GasAuthRequest, res) => {
             });
         }
 
+        // The service account only needed access while copying. Remove it now instead of
+        // leaving it with write access to a file in the user's Drive while that file exists.
+        if (saPermissionId) {
+            await fetch(`https://www.googleapis.com/drive/v3/files/${tempFileId}/permissions/${saPermissionId}`, {
+                method: 'DELETE', headers: { 'Authorization': `Bearer ${userToken}` },
+            }).catch((permErr) => console.warn('prepare-template: could not remove service account access:', permErr));
+        }
+
         return res.json({ success: true, result: { tempFileId, sheets, failedSheets } });
 
     } catch (err: any) {
@@ -499,10 +548,15 @@ router.post('/', auth, async (req, res) => {
         } else {
             // Remove _id and __v from req.body to prevent conflicts
             const { _id, __v, ...updateData } = req.body;
+            // The admin screen receives secrets masked and posts the whole form back. A
+            // masked value means "unchanged": never overwrite a real secret with it.
+            for (const field of SECRET_FIELDS) {
+                if ((updateData as any)[field] === SECRET_MASK) delete (updateData as any)[field];
+            }
             Object.assign(settings, updateData);
         }
         await settings.save();
-        res.json(settings);
+        res.json(maskSecrets(settings));
     } catch (err: any) {
         res.status(400).json({ message: err.message });
     }

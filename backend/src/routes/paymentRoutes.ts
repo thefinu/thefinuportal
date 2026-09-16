@@ -7,20 +7,35 @@ import Account from '../models/Account.js';
 import Transaction from '../models/Transaction.js';
 import UserSpreadsheet from '../models/UserSpreadsheet.js';
 import Plan from '../models/Plan.js';
-import { auth } from '../middleware/authMiddleware.js';
 import { gasAuth, type GasAuthRequest } from '../middleware/gasAuthMiddleware.js';
-import { refundSubscription } from '../utils/stripeRefund.js';
-import { getStripe } from '../utils/stripeClient.js';
+import { auth } from '../middleware/authMiddleware.js';
+import { findUserByEmail } from '../utils/userLookup.js';
+import { refundSubscription, latestPaymentWithinDays } from '../utils/stripeRefund.js';
+import StripeEvent from '../models/StripeEvent.js';
+import { removePlaidItemsForAccounts } from '../utils/plaidItems.js';
+import { getStripe, STRIPE_API_VERSION } from '../utils/stripeClient.js';
+import { resolvePlaidCredentials, isDevUser } from '../utils/envCredentials.js';
+import { ensureDevPlanPrices, getDevStripe } from '../utils/devStripePlans.js';
+import { reportModeMismatch, subscriptionModeFilter } from '../utils/recordMode.js';
 
 const router = express.Router();
 
+// A payment made within this many days is refunded when the user unsubscribes;
+// otherwise the subscription runs to the end of the paid period.
+const REFUND_WINDOW_DAYS = 7;
+
 /**
  * Resolve the Stripe Price ID to charge from a plan + interval selection.
+ *
+ * When `isDev` is true the price is resolved from the plan's TEST-account mirror
+ * (created lazily), because live-mode price IDs cannot be charged with a test key.
+ *
  * Returns the price id and the plan's trial days.
  */
 async function resolvePrice(
     planId: string | undefined,
     interval: string | undefined,
+    isDev = false,
 ): Promise<{ priceId: string; trialDays: number | null }> {
     if (!planId) {
         throw new Error('A plan must be selected for checkout');
@@ -31,13 +46,23 @@ async function resolvePrice(
     }
     const isYearly = interval === 'yearly';
     const regularAmount = isYearly ? plan.yearlyAmount : plan.monthlyAmount;
-    const regularPriceId = isYearly ? plan.yearlyPriceId : plan.monthlyPriceId;
     const saleAmount = isYearly ? plan.saleYearlyAmount : plan.saleMonthlyAmount;
-    const salePriceId = isYearly ? plan.saleYearlyPriceId : plan.saleMonthlyPriceId;
 
     // Charge the sale price when a valid sale is active for this interval
-    const onSale = saleAmount > 0 && saleAmount < regularAmount && !!salePriceId;
-    const priceId = onSale ? salePriceId : regularPriceId;
+    const onSale = saleAmount > 0 && saleAmount < regularAmount;
+
+    let priceId: string;
+    if (isDev) {
+        // Make sure this plan exists in the TEST account, then use those price IDs
+        await ensureDevPlanPrices(plan);
+        priceId = onSale
+            ? (isYearly ? plan.devSaleYearlyPriceId : plan.devSaleMonthlyPriceId)
+            : (isYearly ? plan.devYearlyPriceId : plan.devMonthlyPriceId);
+    } else {
+        const regularPriceId = isYearly ? plan.yearlyPriceId : plan.monthlyPriceId;
+        const salePriceId = isYearly ? plan.saleYearlyPriceId : plan.saleMonthlyPriceId;
+        priceId = onSale && salePriceId ? salePriceId : regularPriceId;
+    }
 
     if (!priceId) {
         throw new Error(`This plan does not offer ${isYearly ? 'yearly' : 'monthly'} billing`);
@@ -51,22 +76,28 @@ async function resolvePrice(
  */
 router.post('/create-checkout-session', gasAuth, async (req: GasAuthRequest, res) => {
     try {
-        const { email, spreadsheetId, planId, interval } = req.body;
-        const userEmail = email || req.gasUser?.email;
+        const { spreadsheetId, planId, interval } = req.body;
+
+        // Always use the OAuth-verified identity — never an email from the request
+        // body. A caller could otherwise pass a Development Environment address to
+        // obtain a free test-mode checkout.
+        const userEmail = req.gasUser?.email;
 
         if (!userEmail) {
-            return res.status(400).json({ message: 'Email is required' });
+            return res.status(401).json({ message: 'Authenticated user email is required' });
         }
 
         const settings = await Settings.findOne();
-        if (!settings || !settings.stripeSecretKey) {
+        if (!settings) {
             return res.status(500).json({ message: 'Stripe is not configured' });
         }
 
-        const stripe = await getStripe();
+        // Dev-allowlisted users check out against the TEST Stripe account
+        const dev = isDevUser(settings, userEmail);
+        const stripe = await getStripe(userEmail);
 
         // Resolve which price to charge from the selected plan + interval
-        const { priceId, trialDays: planTrialDays } = await resolvePrice(planId, interval);
+        const { priceId, trialDays: planTrialDays } = await resolvePrice(planId, interval, dev);
 
         const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
         const trialDays = planTrialDays ?? 14;
@@ -74,6 +105,9 @@ router.post('/create-checkout-session', gasAuth, async (req: GasAuthRequest, res
         const sessionParams: Stripe.Checkout.SessionCreateParams = {
             mode: 'subscription',
             customer_email: userEmail,
+            // Marks checkouts started from the add-on, where the email is the verified
+            // Google login. Website checkouts can't attach to existing users.
+            metadata: { source: 'addon' },
             success_url: `${baseUrl}/success?session_id={CHECKOUT_SESSION_ID}&spreadsheet_id=${encodeURIComponent(spreadsheetId || '')}`,
             cancel_url: `${baseUrl}/cancel?spreadsheet_id=${encodeURIComponent(spreadsheetId || '')}`,
             line_items: [
@@ -152,113 +186,41 @@ router.post('/create-website-checkout', async (req, res) => {
 router.post('/verify-session', async (req, res) => {
     try {
         const { sessionId } = req.body;
-        if (!sessionId) {
+        if (!sessionId || typeof sessionId !== 'string') {
             return res.status(400).json({ message: 'Session ID is required' });
         }
 
-        const stripe = await getStripe();
+        // The session belongs to either the live or the test account, and we don't know
+        // which until we look it up — try production first, then the dev/test account.
+        let session: Stripe.Checkout.Session | null = null;
+        let fromDevAccount = false;
+        let sessionStripe: Stripe | null = null;
+        try {
+            const stripe = await getStripe();
+            session = await stripe.checkout.sessions.retrieve(sessionId, {
+                expand: ['subscription', 'line_items']
+            });
+            sessionStripe = stripe;
+        } catch (prodErr: any) {
+            const devStripe = await getDevStripe();
+            if (!devStripe) throw prodErr;
+            session = await devStripe.checkout.sessions.retrieve(sessionId, {
+                expand: ['subscription', 'line_items']
+            });
+            fromDevAccount = true;
+            sessionStripe = devStripe;
+        }
 
-        // Retrieve the session
-        const session = await stripe.checkout.sessions.retrieve(sessionId, {
-            expand: ['subscription', 'line_items']
-        });
-
-        if (!session) {
+        if (!session || !sessionStripe) {
             return res.status(404).json({ message: 'Session not found' });
         }
 
-        const customerEmail = session.customer_details?.email?.toLowerCase();
-
-        if (!customerEmail) {
-            return res.status(400).json({ message: 'No email found in session' });
+        const outcome = await applyCheckoutSession(session, fromDevAccount, sessionStripe);
+        if (!outcome.ok) {
+            return res.status(outcome.status).json({ message: outcome.message });
         }
 
-        // Find or Update User
-        // We match by email as requested
-        let user = await User.findOne({ email: customerEmail });
-
-        if (!user) {
-            // If user doesn't exist, we could create them, strictly speaking the prompt says "match with email address".
-            // If the user isn't in our DB, we can create a skeleton user.
-            user = new User({
-                email: customerEmail,
-                isSubscribed: true,
-                cancelAtPeriodEnd: false,
-            });
-        } else {
-            user.isSubscribed = true;
-            user.cancelAtPeriodEnd = false;
-        }
-
-        // Update all accounts for this user to be subscribed
-        await Account.updateMany({ user_id: user._id }, { isSubscribed: true });
-
-        // Extract Subscription Details
-        const subscriptionData = session.subscription as Stripe.Subscription;
-        const lineItem = session.line_items?.data[0]; // Assuming one main item
-
-        // Amount is usually in cents for Stripe, convert to major unit if needed or keep as is.
-        // User asked for "Amount", let's store what we see (e.g. 2900 for $29.00) or normalize.
-        // Typically best to store as is or cents. Let's use the amount_total from session which is convenient.
-        const amountTotal = session.amount_total || 0;
-        const amount = amountTotal / 100; // Convert to dollars/euro for display
-        const currency = session.currency || 'usd';
-
-        const planName = lineItem?.description || 'Premium Plan';
-
-        // Upsert Subscription
-        // If we already have this subscription ID, update it.
-        const stripeSubId = typeof subscriptionData === 'string' ? subscriptionData : subscriptionData?.id;
-        const currentPeriodEnd = (typeof subscriptionData === 'object' && subscriptionData !== null && 'current_period_end' in subscriptionData)
-            ? new Date((subscriptionData as any).current_period_end * 1000)
-            : new Date();
-        const status = (typeof subscriptionData === 'object' && subscriptionData !== null && 'status' in subscriptionData)
-            ? (subscriptionData as any).status
-            : session.payment_status;
-
-        const trialEnd = (typeof subscriptionData === 'object' && subscriptionData !== null && (subscriptionData as any).trial_end)
-            ? new Date((subscriptionData as any).trial_end * 1000)
-            : null;
-
-        let subscription = await Subscription.findOne({ stripeSubscriptionId: stripeSubId });
-
-        if (!subscription) {
-            subscription = new Subscription({
-                userId: user._id,
-                stripeSubscriptionId: stripeSubId,
-                stripeCustomerId: session.customer as string,
-                planName: planName,
-                amount: amount,
-                currency: currency,
-                status: status,
-                currentPeriodEnd: currentPeriodEnd,
-                paymentEmail: customerEmail,
-                trialEnd: trialEnd,
-            });
-        } else {
-            subscription.status = status;
-            subscription.currentPeriodEnd = currentPeriodEnd;
-            subscription.planName = planName; // In case it upgraded
-        }
-
-        await subscription.save();
-
-        // Update user with subscription period info
-        user.currentPeriodEnd = currentPeriodEnd;
-        user.trialEnd = trialEnd;
-        await user.save();
-
-        res.json({
-            status: 'success',
-            data: {
-                subscriptionId: stripeSubId,
-                email: customerEmail,
-                amount: amount,
-                currency: currency,
-                plan: planName,
-                customerName: session.customer_details?.name
-            }
-        });
+        res.json({ status: 'success', data: outcome.data });
 
     } catch (err: any) {
         console.error('Payment verification error:', err);
@@ -266,19 +228,181 @@ router.post('/verify-session', async (req, res) => {
     }
 });
 
+// Subscription statuses that keep add-on access. past_due keeps access while
+// Stripe retries the payment. 'paid' covers rows written by older code, which
+// stored the checkout payment_status instead of the subscription's status.
+const ACCESS_STATUSES = ['active', 'trialing', 'past_due', 'paid'];
+
+/** A subscription's period end, wherever the Stripe API version in use puts it. */
+function periodEndFrom(subscription: any): Date | null {
+    const seconds = subscription?.current_period_end ?? subscription?.items?.data?.[0]?.current_period_end;
+    return typeof seconds === 'number' ? new Date(seconds * 1000) : null;
+}
+
+type CheckoutOutcome =
+    | { ok: true; data: Record<string, unknown> }
+    | { ok: false; status: number; message: string };
+
+/**
+ * Records a completed subscription checkout: the user, the subscription row, and
+ * access.
+ *
+ * Shared by verify-session (the success page) and the checkout.session.completed
+ * webhook, so a buyer who closes the tab is still recorded. Safe to run twice for
+ * the same session.
+ *
+ * Access is granted only for a complete session whose subscription is active or
+ * trialing. This used to set isSubscribed = true for any session in any state, and
+ * an old session could be replayed after cancelling to regain access for good.
+ */
+async function applyCheckoutSession(session: Stripe.Checkout.Session, fromDevAccount: boolean, stripe: Stripe): Promise<CheckoutOutcome> {
+    if (session.status !== 'complete') {
+        return { ok: false, status: 409, message: 'Checkout is not complete yet' };
+    }
+
+    const customerEmail = session.customer_details?.email?.toLowerCase();
+    if (!customerEmail) {
+        return { ok: false, status: 400, message: 'No email found in session' };
+    }
+
+    // Reachable unauthenticated and grants a subscription, so a test-mode session
+    // must only ever activate a Development Environment account.
+    if (fromDevAccount) {
+        const settings = await Settings.findOne();
+        if (!isDevUser(settings, customerEmail)) {
+            console.warn(`Rejected test-mode session ${session.id} for non-dev email ${customerEmail}`);
+            return { ok: false, status: 403, message: 'Test-mode session is not permitted for this account' };
+        }
+    }
+
+    const subscriptionData = session.subscription as Stripe.Subscription | string | null;
+    const subscriptionObject: any = (typeof subscriptionData === 'object' && subscriptionData !== null) ? subscriptionData : null;
+    const stripeSubId: string | undefined = typeof subscriptionData === 'string' ? subscriptionData : subscriptionObject?.id;
+    if (!stripeSubId || !subscriptionObject) {
+        return { ok: false, status: 400, message: 'No subscription found in session' };
+    }
+
+    // The live status from Stripe, so a canceled subscription can't be revived by
+    // replaying its old session.
+    const status: string = subscriptionObject.status || '';
+    if (status !== 'active' && status !== 'trialing') {
+        return { ok: false, status: 402, message: 'This subscription is not active' };
+    }
+
+    // Case-insensitive, so a stored "Anna@…" doesn't gain a duplicate lowercase user.
+    let user = await findUserByEmail(customerEmail);
+
+    // Website checkouts collect an email the buyer types, which proves nothing about who
+    // they are. They may create a NEW user, but never attach to one that already existed:
+    // otherwise anyone could tie a subscription, and the data deletion that follows its
+    // cancellation, to someone else's account. Add-on checkouts carry the verified Google
+    // login: marked with metadata, or, for sessions created before that marker existed,
+    // by the customer_email the add-on has always set.
+    const fromAddon = session.metadata?.source === 'addon' || !!session.customer_email;
+    const userCreatedMs = user ? new Date(user.createdAt).getTime() : NaN;
+    // A missing creation date counts as "existed" so the check fails safe.
+    const userExistedBeforeCheckout = !!user && (isNaN(userCreatedMs) || userCreatedMs < session.created * 1000);
+    if (!fromAddon && userExistedBeforeCheckout) {
+        const alreadyLinked = await Subscription.findOne({ stripeSubscriptionId: stripeSubId, userId: user!._id });
+        if (!alreadyLinked) {
+            try {
+                await refundSubscription(stripe, stripeSubId);
+                await stripe.subscriptions.cancel(stripeSubId);
+            } catch (reverseErr: any) {
+                if (reverseErr?.code !== 'resource_missing') {
+                    console.error(`Could not reverse website checkout ${session.id}:`, reverseErr?.message);
+                }
+            }
+            console.warn(`Website checkout ${session.id} used an existing account email; cancelled and refunded.`);
+            return {
+                ok: false,
+                status: 409,
+                message: 'This email already has a TheFinU account, so this purchase was cancelled and refunded. To subscribe, open TheFinU in Google Sheets and subscribe from there.'
+            };
+        }
+    }
+
+    if (!user) {
+        user = new User({ email: customerEmail });
+    }
+
+    const lineItem = session.line_items?.data[0]; // Assuming one main item
+    const amount = (session.amount_total || 0) / 100; // Stripe amounts are in minor units
+    const currency = session.currency || 'usd';
+    const planName = lineItem?.description || 'Premium Plan';
+    const currentPeriodEnd = periodEndFrom(subscriptionObject) || new Date();
+    const trialEnd = typeof subscriptionObject.trial_end === 'number'
+        ? new Date(subscriptionObject.trial_end * 1000)
+        : null;
+
+    // Save the user first so the subscription row never points at a user that
+    // failed to save.
+    user.isSubscribed = true;
+    user.cancelAtPeriodEnd = false;
+    user.currentPeriodEnd = currentPeriodEnd;
+    user.trialEnd = trialEnd;
+    await user.save();
+
+    await Account.updateMany({ user_id: user._id }, { isSubscribed: true });
+
+    let subscription = await Subscription.findOne({ stripeSubscriptionId: stripeSubId });
+    if (!subscription) {
+        subscription = new Subscription({
+            userId: user._id,
+            stripeSubscriptionId: stripeSubId,
+            stripeCustomerId: session.customer as string,
+            planName: planName,
+            amount: amount,
+            currency: currency,
+            status: status,
+            currentPeriodEnd: currentPeriodEnd,
+            paymentEmail: customerEmail,
+            trialEnd: trialEnd,
+            // Straight from Stripe: a real payment or a test one. Nothing recorded this
+            // before, so a test-mode event could act on a live subscription — and that
+            // path deletes the user's data.
+            livemode: subscriptionObject.livemode,
+        });
+    } else {
+        subscription.status = status;
+        subscription.currentPeriodEnd = currentPeriodEnd;
+        subscription.planName = planName; // In case it upgraded
+        // Fills the mode in on rows that predate the field.
+        if (subscription.livemode === undefined) {
+            subscription.livemode = subscriptionObject.livemode;
+        }
+    }
+    await subscription.save();
+
+    return {
+        ok: true,
+        data: {
+            subscriptionId: stripeSubId,
+            email: customerEmail,
+            amount: amount,
+            currency: currency,
+            plan: planName,
+            customerName: session.customer_details?.name
+        }
+    };
+}
+
 /**
  * @route   POST /api/payment/unsubscribe
  * @desc    Refund, cancel subscription, and delete all user data (unless free user)
  */
-router.post('/unsubscribe', gasAuth, async (req, res) => {
+router.post('/unsubscribe', gasAuth, async (req: GasAuthRequest, res) => {
     try {
-        const { email } = req.body;
+        // This refunds, cancels and deletes user data, so it must only ever act on
+        // the OAuth-verified caller — never an email supplied in the request body.
+        const email = req.gasUser?.email;
 
         if (!email) {
-            return res.status(400).json({ message: 'Email is required' });
+            return res.status(401).json({ message: 'Authenticated user email is required' });
         }
 
-        const user = await User.findOne({ email: email.toLowerCase() });
+        // Case-insensitive: a stored "Anna@…" must still match the lowercased identity.
+        const user = await findUserByEmail(email);
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -288,23 +412,39 @@ router.post('/unsubscribe', gasAuth, async (req, res) => {
             return res.json({
                 status: 'success',
                 message: 'Free user — no subscription to cancel. Data retained.',
+                // Tells the add-on not to clear the spreadsheet. It used to treat this
+                // success like a real cancellation and wipe a free user's data while
+                // the backend kept everything.
+                dataRetained: true,
             });
         }
 
-        // 1. Refund and cancel all Stripe subscriptions
+        // 1. Cancel each subscription under the refund policy: a payment made within the
+        //    last REFUND_WINDOW_DAYS is refunded and the subscription ends now; otherwise
+        //    it runs to the end of the paid period with no refund. This used to refund the
+        //    full last invoice however long ago it was paid.
         const subscriptions = await Subscription.find({ userId: user._id });
-        const stripe = await getStripe();
+        const stripe = await getStripe(user.email);
         const results: Array<Record<string, unknown>> = [];
+        let scheduledEnd: Date | null = null;
 
         for (const sub of subscriptions) {
             try {
-                const refund = await refundSubscription(stripe, sub.stripeSubscriptionId);
-                await stripe.subscriptions.cancel(sub.stripeSubscriptionId);
-                results.push({
-                    id: sub.stripeSubscriptionId,
-                    status: 'canceled',
-                    refunded: refund ? `${refund.amount / 100} ${refund.currency}` : 'no payment to refund',
-                });
+                if (await latestPaymentWithinDays(stripe, sub.stripeSubscriptionId, REFUND_WINDOW_DAYS)) {
+                    const refund = await refundSubscription(stripe, sub.stripeSubscriptionId);
+                    await stripe.subscriptions.cancel(sub.stripeSubscriptionId);
+                    results.push({
+                        id: sub.stripeSubscriptionId,
+                        status: 'canceled',
+                        refunded: refund ? `${refund.amount / 100} ${refund.currency}` : 'no payment to refund',
+                    });
+                } else {
+                    await stripe.subscriptions.update(sub.stripeSubscriptionId, { cancel_at_period_end: true });
+                    sub.cancelAtPeriodEnd = true;
+                    await sub.save();
+                    if (!scheduledEnd || sub.currentPeriodEnd > scheduledEnd) scheduledEnd = sub.currentPeriodEnd;
+                    results.push({ id: sub.stripeSubscriptionId, status: 'cancels_at_period_end', periodEnd: sub.currentPeriodEnd });
+                }
             } catch (stripeErr: any) {
                 if (stripeErr.code === 'resource_missing' || (stripeErr.message && stripeErr.message.includes('No such subscription'))) {
                     results.push({ id: sub.stripeSubscriptionId, status: 'canceled (already missing in Stripe)' });
@@ -313,6 +453,30 @@ router.post('/unsubscribe', gasAuth, async (req, res) => {
                     results.push({ id: sub.stripeSubscriptionId, error: stripeErr.message });
                 }
             }
+        }
+
+        // If Stripe refused any cancellation, delete nothing. The user can retry; this
+        // used to carry on and delete all their data with a subscription still active.
+        if (results.some((r) => r.error)) {
+            return res.status(502).json({
+                message: 'Your subscription could not be cancelled right now, so nothing was changed. Please try again.',
+                results,
+            });
+        }
+
+        // Anything running to the end of its period keeps the user's data until then;
+        // the "subscription deleted" webhook clears it when the period is over.
+        if (scheduledEnd) {
+            user.cancelAtPeriodEnd = true;
+            await user.save();
+            return res.json({
+                status: 'success',
+                scheduled: true,
+                dataRetained: true,
+                periodEnd: scheduledEnd,
+                message: `Your subscription will end on ${scheduledEnd.toDateString()}. No refund is due because your last payment was more than ${REFUND_WINDOW_DAYS} days ago. Your data stays until then.`,
+                results,
+            });
         }
 
         // Delete Stripe customer if exists
@@ -338,45 +502,12 @@ router.post('/unsubscribe', gasAuth, async (req, res) => {
             await Transaction.deleteMany({ accountId: { $in: accountIds } });
         }
 
-        if (accounts.length > 0) {
-            try {
-                const settings = await Settings.findOne();
-                if (settings?.plaidClientKey && settings?.plaidSecretKey) {
-                    const plaidBaseUrl = settings.plaidEnvironment === 'production'
-                        ? 'https://production.plaid.com'
-                        : 'https://sandbox.plaid.com';
-
-                    const uniqueTokens = [...new Set(
-                        accounts.map(a => a.access_token).filter(Boolean)
-                    )];
-
-                    for (const access_token of uniqueTokens) {
-                        try {
-                            const response = await fetch(`${plaidBaseUrl}/item/remove`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    client_id: settings.plaidClientKey,
-                                    secret: settings.plaidSecretKey,
-                                    access_token,
-                                }),
-                            });
-                            if (!response.ok) {
-                                const err = await response.json() as any;
-                                console.error(`Plaid item/remove failed: ${err?.error_message}`);
-                            }
-                        } catch (plaidErr: any) {
-                            console.error('Plaid item/remove error:', plaidErr.message);
-                        }
-                    }
-                }
-            } catch (err) {
-                console.error('Plaid cleanup error during unsubscribe:', err);
-            }
-        }
+        // Accounts whose Plaid Item couldn't be removed are kept (status false), so the
+        // access token isn't lost while the Item is still billed.
+        const { removableAccountIds } = await removePlaidItemsForAccounts(accounts, user.email);
 
         // 4. Delete accounts
-        await Account.deleteMany({ user_id: user._id });
+        await Account.deleteMany({ _id: { $in: removableAccountIds } });
 
         // 5. Delete spreadsheet records
         await UserSpreadsheet.deleteMany({ userId: user._id });
@@ -414,27 +545,78 @@ router.post('/stripe-webhook', async (req, res) => {
             return res.status(500).json({ message: 'Stripe is not configured' });
         }
 
-        const stripe = new Stripe(settings.stripeSecretKey, {
-            apiVersion: '2024-12-18.acacia' as any,
-        });
+        // Events can originate from either the live account or, for Development
+        // Environment users, the test account. Each account signs with its own
+        // secret, so try every configured secret until one verifies.
+        const signingCandidates: Array<{ secretKey: string; webhookSecret: string; isDev: boolean }> = [
+            { secretKey: settings.stripeSecretKey, webhookSecret: settings.stripeWebhookSecret, isDev: false },
+        ];
+        if (settings.devEnabled && settings.devStripeSecretKey && settings.devStripeWebhookSecret) {
+            signingCandidates.push({
+                secretKey: settings.devStripeSecretKey,
+                webhookSecret: settings.devStripeWebhookSecret,
+                isDev: true,
+            });
+        }
 
-        let event: Stripe.Event;
+        const verifiable = signingCandidates.filter((c) => c.webhookSecret);
 
-        // Verify webhook signature if secret is configured
-        if (settings.stripeWebhookSecret) {
-            const sig = req.headers['stripe-signature'] as string;
+        // Fail closed. With no secret configured this used to parse the body
+        // unverified, so anyone could post a fake "subscription deleted" event and
+        // delete a user's data. Stripe retries rejected deliveries for several days,
+        // so no event is lost while the secret is being configured.
+        if (verifiable.length === 0) {
+            console.error('Stripe webhook rejected: no webhook signing secret is configured');
+            return res.status(500).json({ message: 'Webhook signing secret is not configured' });
+        }
+
+        const sig = req.headers['stripe-signature'] as string;
+        let event: Stripe.Event | null = null;
+        let verifiedWith: { secretKey: string; isDev: boolean } | null = null;
+        for (const candidate of verifiable) {
             try {
-                event = stripe.webhooks.constructEvent(req.body, sig, settings.stripeWebhookSecret);
-            } catch (webhookErr: any) {
-                console.error('Webhook signature verification failed:', webhookErr.message);
-                return res.status(400).json({ message: 'Webhook signature verification failed' });
+                const stripe = new Stripe(candidate.secretKey, {
+                    apiVersion: STRIPE_API_VERSION as any,
+                });
+                event = stripe.webhooks.constructEvent(req.body, sig, candidate.webhookSecret);
+                verifiedWith = candidate;
+                break;
+            } catch {
+                // Signature did not match this account — try the next one.
             }
-        } else {
-            // No webhook secret configured — parse body directly (not recommended for production)
-            event = req.body as Stripe.Event;
+        }
+
+        if (!event || !verifiedWith) {
+            console.error('Webhook signature verification failed for all configured accounts');
+            return res.status(400).json({ message: 'Webhook signature verification failed' });
+        }
+
+        // Stripe can deliver an event more than once. Skip ones already processed; they
+        // are recorded only after processing succeeds, so a failure is still retried.
+        if (await StripeEvent.exists({ eventId: event.id })) {
+            return res.json({ received: true, duplicate: true });
         }
 
         switch (event.type) {
+            case 'checkout.session.completed': {
+                // Records the subscription even when the buyer never reaches the
+                // success page. verify-session used to be the only writer, so a
+                // closed tab meant Stripe billed someone the database didn't know.
+                const eventSession = event.data.object as Stripe.Checkout.Session;
+                if (eventSession.mode === 'subscription') {
+                    const stripe = new Stripe(verifiedWith.secretKey, {
+                        apiVersion: STRIPE_API_VERSION as any,
+                    });
+                    const session = await stripe.checkout.sessions.retrieve(eventSession.id, {
+                        expand: ['subscription', 'line_items']
+                    });
+                    const outcome = await applyCheckoutSession(session, verifiedWith.isDev, stripe);
+                    if (!outcome.ok) {
+                        console.warn(`Webhook: checkout ${eventSession.id} not applied — ${outcome.message}`);
+                    }
+                }
+                break;
+            }
             case 'customer.subscription.deleted': {
                 // Fired when subscription is actually canceled (end of period or immediate)
                 const stripeSubscription = event.data.object as Stripe.Subscription;
@@ -452,6 +634,8 @@ router.post('/stripe-webhook', async (req, res) => {
                 break;
         }
 
+        await StripeEvent.create({ eventId: event.id, type: event.type, livemode: event.livemode })
+            .catch(() => { /* recorded concurrently */ });
         res.json({ received: true });
     } catch (err: any) {
         console.error('Webhook error:', err);
@@ -466,6 +650,20 @@ async function handleSubscriptionCanceled(stripeSubscription: Stripe.Subscriptio
     const sub = await Subscription.findOne({ stripeSubscriptionId: stripeSubscription.id });
     if (!sub) {
         console.log(`Webhook: No local subscription found for ${stripeSubscription.id}`);
+        return;
+    }
+
+    // This handler deletes the user's data, so a test event reaching a live
+    // subscription is the worst case of the two modes mixing. Once mode checks are on,
+    // such an event is ignored rather than acted on.
+    const modeMismatch = reportModeMismatch(
+        'Subscription',
+        stripeSubscription.id,
+        sub.livemode === undefined ? undefined : (sub.livemode ? 'live' : 'test'),
+        stripeSubscription.livemode ? 'live' : 'test'
+    );
+    if (modeMismatch) {
+        console.warn(`Webhook: ignoring cancellation for ${stripeSubscription.id} — wrong mode.`);
         return;
     }
 
@@ -506,45 +704,12 @@ async function handleSubscriptionCanceled(stripeSubscription: Stripe.Subscriptio
         await Transaction.deleteMany({ accountId: { $in: accountIds } });
     }
 
-    if (accounts.length > 0) {
-        try {
-            const settings = await Settings.findOne();
-            if (settings?.plaidClientKey && settings?.plaidSecretKey) {
-                const plaidBaseUrl = settings.plaidEnvironment === 'production'
-                    ? 'https://production.plaid.com'
-                    : 'https://sandbox.plaid.com';
-
-                const uniqueTokens = [...new Set(
-                    accounts.map(a => a.access_token).filter(Boolean)
-                )];
-
-                for (const access_token of uniqueTokens) {
-                    try {
-                        const response = await fetch(`${plaidBaseUrl}/item/remove`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                client_id: settings.plaidClientKey,
-                                secret: settings.plaidSecretKey,
-                                access_token,
-                            }),
-                        });
-                        if (!response.ok) {
-                            const err = await response.json() as any;
-                            console.error(`Plaid item/remove failed: ${err?.error_message}`);
-                        }
-                    } catch (plaidErr: any) {
-                        console.error('Plaid item/remove error:', plaidErr.message);
-                    }
-                }
-            }
-        } catch (err) {
-            console.error('Plaid cleanup error during webhook cancellation:', err);
-        }
-    }
+    // Accounts whose Plaid Item couldn't be removed are kept (status false), so the
+    // access token isn't lost while the Item is still billed.
+    const { removableAccountIds } = await removePlaidItemsForAccounts(accounts, user.email);
 
     // Delete accounts, spreadsheets, and user
-    await Account.deleteMany({ user_id: user._id });
+    await Account.deleteMany({ _id: { $in: removableAccountIds } });
     await UserSpreadsheet.deleteMany({ userId: user._id });
     await User.findByIdAndDelete(user._id);
 
@@ -558,28 +723,55 @@ async function handleSubscriptionUpdated(stripeSubscription: Stripe.Subscription
     const sub = await Subscription.findOne({ stripeSubscriptionId: stripeSubscription.id });
     if (!sub) return;
 
+    // A test-mode update must not change a live subscription's status or period.
+    const modeMismatch = reportModeMismatch(
+        'Subscription',
+        stripeSubscription.id,
+        sub.livemode === undefined ? undefined : (sub.livemode ? 'live' : 'test'),
+        stripeSubscription.livemode ? 'live' : 'test'
+    );
+    if (modeMismatch) {
+        console.warn(`Webhook: ignoring update for ${stripeSubscription.id} — wrong mode.`);
+        return;
+    }
+
     sub.cancelAtPeriodEnd = stripeSubscription.cancel_at_period_end;
     sub.status = stripeSubscription.status;
-    sub.currentPeriodEnd = new Date((stripeSubscription as any).current_period_end * 1000);
-    sub.trialEnd = (stripeSubscription as any).trial_end
-        ? new Date((stripeSubscription as any).trial_end * 1000)
-        : null;
+    // Read defensively: newer Stripe API versions moved current_period_end onto the
+    // subscription items, and an Invalid Date here failed the save and made Stripe
+    // retry the event indefinitely.
+    const periodEnd = periodEndFrom(stripeSubscription);
+    if (periodEnd) sub.currentPeriodEnd = periodEnd;
+    const trialEndSeconds = (stripeSubscription as any).trial_end;
+    sub.trialEnd = typeof trialEndSeconds === 'number' ? new Date(trialEndSeconds * 1000) : null;
     await sub.save();
 
-    // Sync to user — but skip free users whose subscription data was intentionally cleared
     const user = await User.findById(sub.userId);
-    if (user && !user.isFreeUser) {
-        user.currentPeriodEnd = sub.currentPeriodEnd;
-        user.cancelAtPeriodEnd = sub.cancelAtPeriodEnd;
-        user.trialEnd = sub.trialEnd;
-        await user.save();
+    if (!user) return;
+
+    user.currentPeriodEnd = sub.currentPeriodEnd;
+    user.cancelAtPeriodEnd = sub.cancelAtPeriodEnd;
+    user.trialEnd = sub.trialEnd;
+
+    // Access follows Stripe's status. Nothing used to set isSubscribed back to
+    // false, so a declined card or an unpaid subscription kept full access for
+    // good. Counted across all of the user's subscriptions, so one lapsed duplicate
+    // can't remove access granted by another. Free users are never downgraded.
+    if (!user.isFreeUser) {
+        const withAccess = await Subscription.countDocuments({
+            userId: user._id,
+            status: { $in: ACCESS_STATUSES },
+        });
+        user.isSubscribed = withAccess > 0;
     }
+    await user.save();
 }
 
 /**
  * @route   POST /api/payment/extend-trial
  * @desc    Extend trial period for a subscription (Admin)
  *          Can be used to give free days/months by setting a future trial_end on Stripe
+ *          Admin-only — previously unauthenticated, so anyone could grant free months.
  */
 router.post('/extend-trial', auth, async (req, res) => {
     try {
@@ -597,7 +789,8 @@ router.post('/extend-trial', auth, async (req, res) => {
             return res.status(404).json({ message: 'Subscription not found' });
         }
 
-        const stripe = await getStripe();
+        // Resolve against the subscriber's environment (dev users live in the test account)
+        const stripe = await getStripe(sub.paymentEmail);
 
         // Calculate new trial_end: from now + days, or from existing trial_end + days
         const now = Math.floor(Date.now() / 1000);
@@ -636,11 +829,15 @@ router.post('/extend-trial', auth, async (req, res) => {
 
 /**
  * @route   GET /api/payment/subscriptions
- * @desc    Get all subscriptions (Admin)
+ * @desc    Get all subscriptions (Admin). Admin-only — previously unauthenticated.
  */
 router.get('/subscriptions', auth, async (req, res) => {
     try {
-        const subscriptions = await Subscription.find().populate('userId', 'email').sort({ createdAt: -1 });
+        // ?mode=test lists test-mode subscriptions; anything else lists live ones. The
+        // filter does nothing until mode checks are on.
+        const subscriptions = await Subscription.find(subscriptionModeFilter(req.query.mode))
+            .populate('userId', 'email')
+            .sort({ createdAt: -1 });
         res.json(subscriptions);
     } catch (err: any) {
         res.status(500).json({ message: err.message });

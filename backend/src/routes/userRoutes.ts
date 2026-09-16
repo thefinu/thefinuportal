@@ -9,6 +9,9 @@ import Settings from '../models/Settings.js';
 import { gasAuth } from '../middleware/gasAuthMiddleware.js';
 import { auth } from '../middleware/authMiddleware.js';
 import { refundSubscription } from '../utils/stripeRefund.js';
+import { resolvePlaidCredentials } from '../utils/envCredentials.js';
+import { findUserByEmail } from '../utils/userLookup.js';
+import { removePlaidItemsForAccounts } from '../utils/plaidItems.js';
 
 const router = express.Router();
 
@@ -18,13 +21,19 @@ const router = express.Router();
  */
 router.post('/validate-user', gasAuth, async (req, res) => {
     try {
-        const { email, spreadsheetId } = req.body;
+        const { spreadsheetId } = req.body;
+
+        // Use the OAuth-verified identity rather than the request body, so a caller
+        // cannot read or modify another user's record by passing their email.
+        const email = (req as any).gasUser?.email;
 
         if (!email) {
-            return res.status(400).json({ status: 'error', message: 'Email is required' });
+            return res.status(401).json({ status: 'error', message: 'Authenticated user email is required' });
         }
 
-        let user = await User.findOne({ email });
+        // Case-insensitive: gasAuth lowercases, but stored emails may not be, and a
+        // miss here would create a duplicate user record.
+        let user = await findUserByEmail(email);
         let spreadsheetCreated = false;
         let userCreated = false;
 
@@ -86,9 +95,9 @@ router.post('/validate-user', gasAuth, async (req, res) => {
 
 /**
  * @route   GET /api/users
- * @desc    Get all users (for admin dashboard)
+ * @desc    Get all users (for admin dashboard). Admin-only — previously unauthenticated.
  */
-router.get('/', async (req, res) => {
+router.get('/', auth, async (req, res) => {
     try {
         const users = await User.find().sort({ createdAt: -1 });
         res.json(users);
@@ -112,8 +121,21 @@ router.post('/:id/set-free-user', auth, async (req, res) => {
             return res.status(400).json({ message: 'User is already a free user' });
         }
 
-        // Refund and cancel all Stripe subscriptions for this user
         const subscriptions = await Subscription.find({ userId: user._id });
+
+        // Mark the user free and drop local subscription rows BEFORE touching
+        // Stripe. Cancelling first let the resulting "subscription deleted" webhook
+        // arrive while the user still looked like a paying, non-free customer — and
+        // that handler deletes all of the user's data.
+        await Subscription.deleteMany({ userId: user._id });
+        user.isFreeUser = true;
+        user.isSubscribed = true;
+        user.currentPeriodEnd = null;
+        user.cancelAtPeriodEnd = false;
+        user.trialEnd = null;
+        await user.save();
+
+        // Refund and cancel all Stripe subscriptions for this user
         const refunds: string[] = [];
         if (subscriptions.length > 0) {
             try {
@@ -143,16 +165,8 @@ router.post('/:id/set-free-user', auth, async (req, res) => {
             }
         }
 
-        // Delete subscription records from DB
-        await Subscription.deleteMany({ userId: user._id });
-
-        // Set user as free user with permanent access
-        user.isFreeUser = true;
-        user.isSubscribed = true;
-        user.currentPeriodEnd = null;
-        user.cancelAtPeriodEnd = false;
-        user.trialEnd = null;
-        await user.save();
+        // Local subscription rows were already removed and the user marked free,
+        // before Stripe was called — see above.
 
         // Update all accounts to subscribed
         await Account.updateMany({ user_id: user._id }, { isSubscribed: true });
@@ -229,47 +243,15 @@ router.delete('/:id', auth, async (req, res) => {
             await Transaction.deleteMany({ accountId: { $in: accountIds } });
         }
 
-        // 4. If unsubscribed and not a free user, remove Plaid items before deleting accounts
-        if (!user.isSubscribed && !user.isFreeUser && accounts.length > 0) {
-            try {
-                const settings = await Settings.findOne();
-                if (settings?.plaidClientKey && settings?.plaidSecretKey) {
-                    const plaidBaseUrl = settings.plaidEnvironment === 'production'
-                        ? 'https://production.plaid.com'
-                        : 'https://sandbox.plaid.com';
-
-                    // Deduplicate access tokens — one item/remove call per linked item
-                    const uniqueTokens = [...new Set(
-                        accounts.map(a => a.access_token).filter(Boolean)
-                    )];
-
-                    for (const access_token of uniqueTokens) {
-                        try {
-                            const response = await fetch(`${plaidBaseUrl}/item/remove`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    client_id: settings.plaidClientKey,
-                                    secret: settings.plaidSecretKey,
-                                    access_token,
-                                }),
-                            });
-                            if (!response.ok) {
-                                const err = await response.json() as any;
-                                console.error(`Plaid item/remove failed for token: ${err?.error_message}`);
-                            }
-                        } catch (plaidErr: any) {
-                            console.error('Plaid item/remove error:', plaidErr.message);
-                        }
-                    }
-                }
-            } catch (err) {
-                console.error('Plaid cleanup error during user delete:', err);
-            }
-        }
+        // 4. Remove Plaid items before deleting accounts. This used to run only for
+        // users who were neither subscribed nor free, and since nothing ever cleared
+        // isSubscribed, almost every paying user's Items were left billed forever.
+        // Accounts whose Item couldn't be removed are kept (status false) so the token
+        // isn't lost.
+        const { removableAccountIds } = await removePlaidItemsForAccounts(accounts, user.email);
 
         // 5. Delete accounts
-        await Account.deleteMany({ user_id: user._id });
+        await Account.deleteMany({ _id: { $in: removableAccountIds } });
 
         // 6. Delete spreadsheet records
         await UserSpreadsheet.deleteMany({ userId: user._id });

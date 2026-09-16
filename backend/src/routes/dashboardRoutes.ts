@@ -2,10 +2,13 @@ import express from 'express';
 import User from '../models/User.js';
 import Account from '../models/Account.js';
 import Subscription from '../models/Subscription.js';
+import { auth } from '../middleware/authMiddleware.js';
+import { subscriptionModeFilter } from '../utils/recordMode.js';
 
 const router = express.Router();
 
-router.get('/stats', async (req, res) => {
+// Admin-only: exposes user counts and revenue. Previously unauthenticated.
+router.get('/stats', auth, async (req, res) => {
     try {
         const totalUsers = await User.countDocuments();
         const subscribedUsers = await User.countDocuments({ isSubscribed: true });
@@ -14,12 +17,16 @@ router.get('/stats', async (req, res) => {
         const totalAccounts = await Account.countDocuments();
         const activeAccounts = await Account.countDocuments({ status: true });
 
-        // Calculate total revenue from active subscriptions using aggregation
-        const revenueAgg = await Subscription.aggregate([
-            { $match: { status: { $in: ['active', 'paid'] } } },
-            { $group: { _id: null, total: { $sum: '$amount' } } },
-        ]);
-        const totalRevenue = revenueAgg[0]?.total || 0;
+        // Calculate total revenue from active subscriptions.
+        //
+        // Test-mode subscriptions are ordinary rows carrying real amounts, so they were
+        // counted as revenue. With mode checks on, ?mode=test shows only those and
+        // anything else shows live figures.
+        const subscriptions = await Subscription.find({
+            status: { $in: ['active', 'paid'] },
+            ...subscriptionModeFilter(req.query.mode),
+        });
+        const totalRevenue = subscriptions.reduce((acc, curr) => acc + (curr.amount || 0), 0);
 
         res.json({
             totalUsers,

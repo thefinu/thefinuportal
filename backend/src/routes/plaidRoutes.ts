@@ -4,6 +4,9 @@ import PlaidPricing from '../models/PlaidPricing.js';
 import PlaidUsage from '../models/PlaidUsage.js';
 import User from '../models/User.js';
 import { auth } from '../middleware/authMiddleware.js';
+import { gasAuth } from '../middleware/gasAuthMiddleware.js';
+import { findUserByEmail } from '../utils/userLookup.js';
+import { plaidEnvFromUrl, plaidEnvModeFilter } from '../utils/recordMode.js';
 
 // Maps billing type from payload to the product name in plaid_pricing
 const BILLING_PRODUCT_MAP: Record<string, string> = {
@@ -18,12 +21,20 @@ const BILLING_PRODUCT_MAP: Record<string, string> = {
 const router = express.Router();
 
 // POST /api/plaid/usage/log — log a Plaid API usage event
-router.post('/usage/log', async (req, res) => {
+router.post('/usage/log', gasAuth, async (req, res) => {
     try {
-        const { email, billing, endpoint, status, timestamp } = req.body;
+        const { billing, endpoint, status, timestamp } = req.body;
 
-        if (!email || !billing || !endpoint) {
-            return res.status(400).json({ message: 'email, billing, and endpoint are required' });
+        // Attribute usage to the OAuth-verified caller so billing records cannot be
+        // forged against another account.
+        const email = (req as any).gasUser?.email;
+
+        if (!email) {
+            return res.status(401).json({ message: 'Authenticated user email is required' });
+        }
+
+        if (!billing || !endpoint) {
+            return res.status(400).json({ message: 'billing and endpoint are required' });
         }
 
         if (!(billing in BILLING_PRODUCT_MAP)) {
@@ -31,9 +42,10 @@ router.post('/usage/log', async (req, res) => {
         }
 
         // 1. Resolve user
-        const user = await User.findOne({ email });
+        // Case-insensitive — a mixed-case stored email used to log nothing.
+        const user = await findUserByEmail(email);
         if (!user) {
-            return res.status(404).json({ message: `User not found: ${email}` });
+            return res.status(404).json({ message: 'User not found' });
         }
 
         // 2. Resolve pricing from plaid_pricing
@@ -52,6 +64,9 @@ router.post('/usage/log', async (req, res) => {
             billing,
             status: status ?? '',
             timestamp: timestamp ? new Date(timestamp) : new Date(),
+            // The endpoint the add-on reports names the Plaid host it called, which is
+            // what decides whether the call is billable.
+            plaidEnv: plaidEnvFromUrl(endpoint),
         });
 
         await usage.save();
@@ -65,7 +80,9 @@ router.post('/usage/log', async (req, res) => {
 // GET /api/plaid/usage — get all usage records (admin)
 router.get('/usage', auth, async (req, res) => {
     try {
-        const usage = await PlaidUsage.find()
+        // ?mode=test lists sandbox calls, which are not billable; anything else lists
+        // production usage. Does nothing until mode checks are on.
+        const usage = await PlaidUsage.find(plaidEnvModeFilter(req.query.mode))
             .populate('userId', 'email')
             .populate('productId', 'product rate perCall perMonth')
             .sort({ createdAt: -1 });
@@ -78,10 +95,7 @@ router.get('/usage', auth, async (req, res) => {
 // GET /api/plaid/usage/user/:userId/monthly — monthly invoice summary (admin)
 router.get('/usage/user/:userId/monthly', auth, async (req, res) => {
     try {
-        const userId = req.params.userId as string;
-        if (!mongoose.Types.ObjectId.isValid(userId)) {
-            return res.status(400).json({ message: 'Invalid user ID format' });
-        }
+        const { userId } = req.params;
         const now = new Date();
         const year  = parseInt(req.query.year  as string) || now.getFullYear();
         const month = parseInt(req.query.month as string) || now.getMonth() + 1;
@@ -99,6 +113,8 @@ router.get('/usage/user/:userId/monthly', auth, async (req, res) => {
                     userId:    new mongoose.Types.ObjectId(userId),
                     timestamp: { $gte: startDate, $lt: endDate },
                     price:     { $gt: 0 },
+                    // Sandbox calls are not billed, so they do not belong on an invoice.
+                    ...plaidEnvModeFilter(req.query.mode),
                 },
             },
             {
@@ -133,9 +149,6 @@ router.get('/usage/user/:userId/monthly', auth, async (req, res) => {
 // GET /api/plaid/usage/user/:userId — get usage for a specific user (admin)
 router.get('/usage/user/:userId', auth, async (req, res) => {
     try {
-        if (!mongoose.Types.ObjectId.isValid(req.params.userId as string)) {
-            return res.status(400).json({ message: 'Invalid user ID format' });
-        }
         const usage = await PlaidUsage.find({ userId: new mongoose.Types.ObjectId(req.params.userId) })
             .populate('productId', 'product rate perCall perMonth')
             .sort({ createdAt: -1 });

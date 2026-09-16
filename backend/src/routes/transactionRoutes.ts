@@ -1,11 +1,14 @@
 import express from 'express';
 import Transaction from '../models/Transaction.js';
 import Account from '../models/Account.js';
+import { auth } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
+// All routes here are admin-only. They previously had no authentication.
+
 // Get all transactions
-router.get('/', async (req, res) => {
+router.get('/', auth, async (req, res) => {
     try {
         const transactions = await Transaction.find().populate('accountId').sort({ date: -1 });
         res.json(transactions);
@@ -15,13 +18,9 @@ router.get('/', async (req, res) => {
 });
 
 // Create a transaction
-router.post('/', async (req, res) => {
+router.post('/', auth, async (req, res) => {
     const transaction = new Transaction(req.body);
     try {
-        if (!transaction.amount || !isFinite(transaction.amount)) {
-            return res.status(400).json({ message: 'amount must be a valid number' });
-        }
-
         const newTransaction = await transaction.save();
 
         // Update account balance
@@ -42,7 +41,7 @@ router.post('/', async (req, res) => {
 });
 
 // Delete a transaction
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
     try {
         const transaction = await Transaction.findById(req.params.id);
         if (!transaction) return res.status(404).json({ message: 'Transaction not found' });

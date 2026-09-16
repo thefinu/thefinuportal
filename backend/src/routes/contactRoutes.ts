@@ -4,10 +4,6 @@ import Settings from '../models/Settings.js';
 
 const router = Router();
 
-function escapeHtml(str: string): string {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 async function getMailerConfig() {
     const settings = await Settings.findOne();
     const host = settings?.smtpHost || process.env.SMTP_HOST || 'smtp.gmail.com';
@@ -26,28 +22,64 @@ async function getMailerConfig() {
     return { transporter, user, contactEmail };
 }
 
+// Everything a visitor types ends up in an HTML email, so it is escaped. Unescaped,
+// the form delivered arbitrary HTML (links, forms, tracking images) to the inbox.
+function escapeHtml(value: unknown): string {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Single-line text for the sender name and subject.
+function headerText(value: unknown, maxLength: number): string {
+    return String(value ?? '').replace(/[\r\n"<>]/g, ' ').trim().slice(0, maxLength);
+}
+
+const EMAIL_PATTERN = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
+const MAX_TEXT = 5000;
+
+function isFilledString(value: unknown): value is string {
+    return typeof value === 'string' && value.trim() !== '';
+}
+
+function isEmail(value: unknown): value is string {
+    return typeof value === 'string' && value.length <= 254 && EMAIL_PATTERN.test(value);
+}
+
 // POST /contact — General contact form
 router.post('/', async (req: Request, res: Response) => {
     const { firstName, lastName, email, message } = req.body;
 
-    if (!firstName || !lastName || !email || !message) {
+    if (![firstName, lastName, email, message].every(isFilledString)) {
         res.status(400).json({ error: 'All fields are required' });
+        return;
+    }
+    if (!isEmail(email)) {
+        res.status(400).json({ error: 'Please enter a valid email address' });
+        return;
+    }
+    if (message.length > MAX_TEXT) {
+        res.status(400).json({ error: 'Message is too long' });
         return;
     }
 
     try {
         const { transporter, user, contactEmail } = await getMailerConfig();
+        const name = headerText(`${firstName} ${lastName}`, 100);
         await transporter.sendMail({
-            from: `"${firstName} ${lastName}" <${user}>`,
+            from: `"${name}" <${user}>`,
             replyTo: email,
             to: contactEmail,
-            subject: `New Contact Message from ${escapeHtml(firstName)} ${escapeHtml(lastName)}`,
+            subject: `New Contact Message from ${name}`,
             html: `
                 <h2>New Contact Form Submission</h2>
                 <p><strong>Name:</strong> ${escapeHtml(firstName)} ${escapeHtml(lastName)}</p>
                 <p><strong>Email:</strong> ${escapeHtml(email)}</p>
                 <p><strong>Message:</strong></p>
-                <p>${escapeHtml(message)}</p>
+                <p>${escapeHtml(message).replace(/\n/g, '<br>')}</p>
             `,
         });
 
@@ -62,25 +94,34 @@ router.post('/', async (req: Request, res: Response) => {
 router.post('/feature-request', async (req: Request, res: Response) => {
     const { firstName, email, feature, details } = req.body;
 
-    if (!firstName || !email || !feature || !details) {
+    if (![firstName, email, feature, details].every(isFilledString)) {
         res.status(400).json({ error: 'All fields are required' });
+        return;
+    }
+    if (!isEmail(email)) {
+        res.status(400).json({ error: 'Please enter a valid email address' });
+        return;
+    }
+    if (details.length > MAX_TEXT || feature.length > 200) {
+        res.status(400).json({ error: 'Request is too long' });
         return;
     }
 
     try {
         const { transporter, user, contactEmail } = await getMailerConfig();
+        const name = headerText(firstName, 100);
         await transporter.sendMail({
-            from: `"${firstName}" <${user}>`,
+            from: `"${name}" <${user}>`,
             replyTo: email,
             to: contactEmail,
-            subject: `Feature Request: ${escapeHtml(feature)} — from ${escapeHtml(firstName)}`,
+            subject: `Feature Request: ${headerText(feature, 150)} — from ${name}`,
             html: `
                 <h2>New Feature Request</h2>
                 <p><strong>Name:</strong> ${escapeHtml(firstName)}</p>
                 <p><strong>Email:</strong> ${escapeHtml(email)}</p>
                 <p><strong>Feature:</strong> ${escapeHtml(feature)}</p>
                 <p><strong>Details:</strong></p>
-                <p>${escapeHtml(details)}</p>
+                <p>${escapeHtml(details).replace(/\n/g, '<br>')}</p>
             `,
         });
 

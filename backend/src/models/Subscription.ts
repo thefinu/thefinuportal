@@ -12,6 +12,7 @@ export interface ISubscription extends Document {
     paymentEmail: string;
     cancelAtPeriodEnd: boolean;
     trialEnd: Date | null;
+    livemode?: boolean;
 }
 
 const SubscriptionSchema: Schema = new Schema({
@@ -26,6 +27,12 @@ const SubscriptionSchema: Schema = new Schema({
     paymentEmail: { type: String, required: true },
     cancelAtPeriodEnd: { type: Boolean, default: false },
     trialEnd: { type: Date, default: null },
+
+    // Whether this came from live Stripe or test Stripe, copied from the Stripe object
+    // itself. A test-mode cancellation used to be able to act on a live subscription,
+    // which deletes the user's data. Rows written before this field exists stay unset
+    // and count as live — see utils/recordMode.
+    livemode: { type: Boolean, default: undefined },
 }, { timestamps: true });
 
 export default mongoose.model<ISubscription>('Subscription', SubscriptionSchema);
