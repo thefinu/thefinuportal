@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Mail, MapPin, ShieldCheck, Zap, Heart, LifeBuoy } from "lucide-react";
 
-const INSTALL_LINK = "https://workspace.google.com/marketplace/app/thefinu/123456789";
+const INSTALL_LINK = "https://workspace.google.com/marketplace/app/thefinu/1014598876589";
 
 export default function PublicFooter() {
     return (
@@ -39,7 +39,6 @@ export default function PublicFooter() {
                             <li><Link href="/#features" className="hover:text-white transition-colors">Features</Link></li>
                             <li><Link href="/#how-it-works" className="hover:text-white transition-colors">How it Works</Link></li>
                             <li><Link href="/#pricing" className="hover:text-white transition-colors">Pricing</Link></li>
-                            <li><Link href="/#what-people-say" className="hover:text-white transition-colors">Reviews</Link></li>
                         </ul>
                     </div>
 
