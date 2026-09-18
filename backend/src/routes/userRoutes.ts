@@ -12,6 +12,7 @@ import { refundSubscription } from '../utils/stripeRefund.js';
 import { resolvePlaidCredentials } from '../utils/envCredentials.js';
 import { findUserByEmail } from '../utils/userLookup.js';
 import { removePlaidItemsForAccounts } from '../utils/plaidItems.js';
+import SpreadsheetAccount from '../models/SpreadsheetAccount.js';
 
 const router = express.Router();
 
@@ -90,6 +91,85 @@ router.post('/validate-user', gasAuth, async (req, res) => {
     } catch (err: any) {
         console.error('User sync error:', err);
         res.status(500).json({ status: 'error', message: err.message });
+    }
+});
+
+/**
+ * @route   DELETE /api/users/me
+ * @desc    Removes the caller's own TheFinU account and all of its data.
+ *
+ * A user on a free plan has nothing to cancel and no refund to settle, so the
+ * unsubscribe route deliberately keeps their data — which left them no way to remove
+ * their account at all. This is that way.
+ *
+ * Anyone with a paying subscription is refused: cancelling one has refund rules, a
+ * period end and Stripe state to settle, and that path already exists at
+ * /payment/unsubscribe. Routing a paying customer through here would delete their data
+ * while they were still being charged.
+ */
+router.delete('/me', gasAuth, async (req, res) => {
+    try {
+        const email = (req as any).gasUser?.email;
+        if (!email) {
+            return res.status(401).json({ status: 'error', message: 'Authenticated user email is required' });
+        }
+
+        const user = await findUserByEmail(email);
+        if (!user) {
+            return res.status(404).json({ status: 'error', message: 'User not found' });
+        }
+
+        const subscriptions = await Subscription.find({ userId: user._id });
+        if (subscriptions.length > 0 && !user.isFreeUser) {
+            return res.status(409).json({
+                status: 'error',
+                message: 'You have an active subscription. Please cancel that first.',
+            });
+        }
+
+        // Plaid Items go before the accounts, so a connection is never left billed with
+        // its only access token deleted. An Item that cannot be released keeps its
+        // account (status false) instead of losing the token.
+        const accounts = await Account.find({ user_id: user._id });
+        const accountIds = accounts.map((a) => a._id);
+
+        if (accountIds.length > 0) {
+            await Transaction.deleteMany({ accountId: { $in: accountIds } } as any);
+        }
+
+        const { removableAccountIds } = await removePlaidItemsForAccounts(accounts, user.email);
+
+        // Whatever the helper did not clear still holds a live Plaid Item, so those
+        // accounts — and their access tokens — stay.
+        const removable = new Set(removableAccountIds.map((id: any) => String(id)));
+        const keptAccountIds = accounts
+            .map((a) => a._id)
+            .filter((id: any) => !removable.has(String(id)));
+
+        await SpreadsheetAccount.deleteMany({ userId: user._id } as any);
+        await Account.deleteMany({ _id: { $in: removableAccountIds } } as any);
+        await UserSpreadsheet.deleteMany({ userId: user._id });
+        await Subscription.deleteMany({ userId: user._id });
+
+        // The user record survives when an Item could not be released, so the orphaned
+        // connection still has an owner to retry from in the admin panel.
+        if (keptAccountIds.length === 0) {
+            await User.findByIdAndDelete(user._id);
+        } else {
+            console.error(`Kept user ${user.email}: ${keptAccountIds.length} Plaid Item(s) could not be removed.`);
+        }
+
+        res.json({
+            status: 'success',
+            message: 'Your TheFinU account and data have been removed.',
+            removed: {
+                accounts: removableAccountIds.length,
+                accountsKept: keptAccountIds.length,
+            },
+        });
+    } catch (err: any) {
+        console.error('Self-delete error:', err?.message);
+        res.status(500).json({ status: 'error', message: 'Could not remove your account. Please try again.' });
     }
 });
 

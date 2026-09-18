@@ -9,6 +9,7 @@ import { resolvePlaidCredentials } from '../utils/envCredentials.js';
 import { plaidProxyOnly, withoutAccessToken, withoutAccessTokens } from '../utils/plaidProxyOnly.js';
 import { plaidEnvFromToken } from '../utils/recordMode.js';
 import SpreadsheetAccount from '../models/SpreadsheetAccount.js';
+import UserSpreadsheet from '../models/UserSpreadsheet.js';
 import { verifiedSpreadsheetId, SpreadsheetAccessError } from '../utils/spreadsheetAccess.js';
 import { verifyPlaidWebhook } from '../utils/plaidWebhook.js';
 
@@ -155,6 +156,86 @@ const ADMIN_ACCOUNT_FIELDS = [
     'name', 'type', 'balance', 'color', 'user_id',
     'institution_name', 'account_type', 'account_subtype', 'mask', 'account_name', 'status',
 ];
+
+/**
+ * Accounts grouped by the user who owns them (admin).
+ *
+ * The flat list this replaces made a user with eight accounts look like eight
+ * unrelated rows, and said nothing about which spreadsheets were syncing them. Access
+ * tokens are never included: nothing in the admin panel needs one.
+ */
+router.get('/admin/by-user', auth, async (req, res) => {
+    try {
+        const users = await User.find().select('_id email isSubscribed isFreeUser').lean();
+        const accounts = await Account.find()
+            .select('_id account_id user_id name account_name institution_name mask status plaidEnv')
+            .lean();
+        const links = await SpreadsheetAccount.find()
+            .select('account_id spreadsheetId is_linked is_update')
+            .lean();
+        const spreadsheets = await UserSpreadsheet.find().select('userId spreadsheetId').lean();
+
+        // Grouped in memory rather than with one aggregation per user: three reads
+        // total, however many users there are.
+        const linksByAccount = new Map<string, any[]>();
+        for (const link of links as any[]) {
+            const list = linksByAccount.get(link.account_id) || [];
+            list.push(link);
+            linksByAccount.set(link.account_id, list);
+        }
+
+        const sheetCountByUser = new Map<string, number>();
+        for (const sheet of spreadsheets as any[]) {
+            const key = String(sheet.userId);
+            sheetCountByUser.set(key, (sheetCountByUser.get(key) || 0) + 1);
+        }
+
+        const accountsByUser = new Map<string, any[]>();
+        for (const account of accounts as any[]) {
+            const key = String(account.user_id || 'unassigned');
+            const list = accountsByUser.get(key) || [];
+            list.push({
+                id: String(account._id),
+                account_id: account.account_id,
+                name: account.name || account.account_name || 'Unnamed account',
+                institution_name: account.institution_name || '',
+                mask: account.mask || '',
+                status: account.status !== false,
+                plaidEnv: account.plaidEnv || null,
+                // One entry per spreadsheet syncing this account. An account with none
+                // is connected but not yet claimed by any spreadsheet.
+                spreadsheets: (linksByAccount.get(account.account_id) || []).map((l: any) => ({
+                    spreadsheetId: l.spreadsheetId,
+                    isLinked: l.is_linked === true,
+                    hasPendingUpdates: l.is_update === true,
+                })),
+            });
+            accountsByUser.set(key, list);
+        }
+
+        const grouped = users.map((user: any) => {
+            const key = String(user._id);
+            const userAccounts = accountsByUser.get(key) || [];
+            return {
+                userId: key,
+                email: user.email,
+                isSubscribed: user.isSubscribed === true,
+                isFreeUser: user.isFreeUser === true,
+                accountCount: userAccounts.length,
+                spreadsheetCount: sheetCountByUser.get(key) || 0,
+                accounts: userAccounts,
+            };
+        });
+
+        // Users with accounts first — the ones an admin is usually looking for.
+        grouped.sort((a, b) => b.accountCount - a.accountCount || a.email.localeCompare(b.email));
+
+        res.json(grouped);
+    } catch (err: any) {
+        console.error('Grouped accounts error:', err?.message);
+        res.status(500).json({ message: 'Could not load accounts' });
+    }
+});
 
 // Create an account (admin)
 router.post('/', auth, async (req, res) => {
@@ -709,6 +790,12 @@ router.delete('/admin/:id', auth, async (req, res) => {
         }
 
         await Account.deleteOne({ _id: account._id });
+
+        // The link rows go with it. Left behind, they would keep telling spreadsheets
+        // the account is theirs to sync, and would count against the "is anyone else
+        // using this?" check that guards the next Item removal.
+        await SpreadsheetAccount.deleteMany({ account_id: account.account_id } as any);
+
         res.json({ message: 'Account deleted', plaidItemRemoved });
     } catch (err: any) {
         if (refuseForeignSpreadsheet(err, res)) return;

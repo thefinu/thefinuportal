@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Mail, MapPin, ShieldCheck, Zap, Heart, LifeBuoy } from "lucide-react";
 
-const INSTALL_LINK = "https://workspace.google.com/marketplace/app/thefinu/123456789";
+const INSTALL_LINK = "https://workspace.google.com/marketplace/app/thefinu/1014598876589";
 
 export default function PublicFooter() {
     return (
