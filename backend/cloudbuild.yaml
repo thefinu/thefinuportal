@@ -32,14 +32,19 @@ steps:
       - '--allow-unauthenticated'
       - '--port=8080'
       - '--set-secrets=MONGODB_URI=MONGODB_URI:latest,JWT_SECRET=JWT_SECRET:latest,SMTP_PASS=SMTP_PASS:latest'
-      # One comma-separated list of KEY=VALUE pairs, with no spaces and no trailing
-      # comma: gcloud splits on commas, so a space becomes part of the next variable's
-      # NAME and a trailing comma is read as an empty pair. Either one fails the deploy.
+      # The leading ^|^ sets "|" as the separator between KEY=VALUE pairs instead of the
+      # default comma. GAS_OAUTH_CLIENT_IDS holds a comma-separated LIST, so with the
+      # default separator gcloud would read the second client ID as a new variable name
+      # and the deploy would fail. "|" is used because it appears in none of the values —
+      # "@" would break the email addresses below.
       #
-      # GAS_OAUTH_CLIENT_IDS is the OAuth client whose tokens this API accepts. To allow
-      # more than one, this flag cannot hold them — its own separator is the comma — so
-      # use the alternate delimiter form: '--update-env-vars=^@^GAS_OAUTH_CLIENT_IDS=id1,id2@NODE_ENV=production'
-      - '--update-env-vars=NODE_ENV=production,SMTP_HOST=smtp.gmail.com,SMTP_PORT=587,SMTP_USER=anna@thefinu.com,CONTACT_EMAIL=anna@thefinu.com,GAS_OAUTH_CLIENT_IDS=1014598876589-36dskb92hja91lj3ca1f7vp9ohgh5a5r.apps.googleusercontent.com,APP_BASE_URL=https://thefinu.com'
+      # No spaces anywhere and no trailing separator: a space becomes part of the next
+      # variable's name, and a trailing separator is read as an empty pair.
+      #
+      # GAS_OAUTH_CLIENT_IDS lists every OAuth client whose tokens this API accepts. The
+      # Marketplace-published add-on and the Apps Script editor present DIFFERENT client
+      # IDs, so both are listed; leaving one out rejects that surface with a 403.
+      - '--update-env-vars=^|^NODE_ENV=production|SMTP_HOST=smtp.gmail.com|SMTP_PORT=587|SMTP_USER=anna@thefinu.com|CONTACT_EMAIL=anna@thefinu.com|GAS_OAUTH_CLIENT_IDS=1014598876589-emagvld0pum58tbdtsgceaij8k82sdht.apps.googleusercontent.com,1014598876589-36dskb92hja91lj3ca1f7vp9ohgh5a5r.apps.googleusercontent.com|APP_BASE_URL=https://thefinu.com'
 
 images:
   - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/backend:$COMMIT_SHA'
