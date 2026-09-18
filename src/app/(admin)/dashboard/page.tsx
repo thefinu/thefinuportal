@@ -23,6 +23,20 @@ interface Stats {
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [adminName, setAdminName] = useState("");
+
+  useEffect(() => {
+    // The greeting used to be hardcoded to one person's name, which every admin saw.
+    try {
+      const stored = localStorage.getItem("admin");
+      if (stored) {
+        const admin = JSON.parse(stored);
+        setAdminName(admin?.name || admin?.email || "");
+      }
+    } catch {
+      // A missing or unreadable record just means a shorter greeting.
+    }
+  }, []);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -43,7 +57,11 @@ export default function Dashboard() {
       <div className="flex items-center justify-between border-b border-primary/10 pb-6">
         <div>
           <h1 className="text-3xl font-extrabold text-primary">Financial Overview</h1>
-          <p className="text-slate-500 mt-1">Welcome back, <span className="text-secondary font-semibold">Chris Anna!</span></p>
+          <p className="text-slate-500 mt-1">
+            {adminName
+              ? <>Welcome back, <span className="text-secondary font-semibold">{adminName}</span></>
+              : "Welcome back"}
+          </p>
         </div>
       </div>
 

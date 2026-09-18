@@ -21,7 +21,7 @@ function CancelContent() {
                 </h1>
 
                 <p className="mb-10 text-slate-500 text-sm leading-relaxed">
-                    The payment process was not completed and you haven't been charged. If you ran into any issues, our support team is happy to help.
+                    The payment process was not completed and you haven&apos;t been charged. If you ran into any issues, our support team is happy to help.
                 </p>
 
                 <div className="grid grid-cols-1 gap-4">

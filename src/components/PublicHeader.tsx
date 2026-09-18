@@ -77,7 +77,6 @@ export default function PublicHeader({ onDark = false }: { onDark?: boolean }) {
                         {[
                             { href: "/#features", label: "Features" },
                             { href: "/#how-it-works", label: "How it Works" },
-                            { href: "/#what-people-say", label: "Reviews" },
                             { href: "/#pricing", label: "Pricing" },
                             { href: "/about", label: "About" },
                             { href: "/contact", label: "Contact" },

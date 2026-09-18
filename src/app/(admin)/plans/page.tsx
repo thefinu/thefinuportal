@@ -358,7 +358,7 @@ export default function PlansPage() {
                                     />
                                 </div>
                             </div>
-                            <p className="-mt-2 text-xs text-slate-400">Leave a price at 0 to not offer that billing interval. Prices can't be edited on Stripe — changing an amount creates a new Stripe price automatically.</p>
+                            <p className="-mt-2 text-xs text-slate-400">Leave a price at 0 to not offer that billing interval. Prices can&apos;t be edited on Stripe — changing an amount creates a new Stripe price automatically.</p>
 
                             <div className="rounded-lg border border-dashed border-slate-200 p-4">
                                 <p className="text-sm font-semibold text-slate-700 mb-0.5">Sale price (optional)</p>

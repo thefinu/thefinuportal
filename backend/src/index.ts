@@ -34,7 +34,13 @@ console.log(`Port defined: ${PORT}`);
 // Stripe webhook needs raw body for signature verification — must be before express.json()
 app.use('/api/payment/stripe-webhook', express.raw({ type: 'application/json' }));
 app.use('/payment/stripe-webhook', express.raw({ type: 'application/json' }));
-app.use(express.json());
+// The raw bytes are kept alongside the parsed body: Plaid signs a hash of exactly what
+// it sent, so the webhook cannot be verified from the re-serialised JSON.
+app.use(express.json({
+    verify: (req, _res, buf) => {
+        (req as any).rawBody = buf;
+    },
+}));
 
 const allowedOrigins = [
     'https://thefinu.com',
@@ -87,6 +93,18 @@ app.get('/', (req, res) => {
     res.send('Financial Portal API is running');
 });
 
+// Cloud Run needs the port open immediately for its health check, so the server starts
+// before Mongo is connected. API requests arriving in that window used to reach
+// Mongoose's buffering and fail with an opaque 500; they now get an honest 503 and a
+// retry hint. The root path stays open so the health check still passes.
+app.use('/api', (req, res, next) => {
+    if (mongoose.connection.readyState !== 1) {
+        res.setHeader('Retry-After', '5');
+        return res.status(503).json({ message: 'Starting up. Please try again in a moment.' });
+    }
+    next();
+});
+
 app.use('/api', apiRouter);
 
 // Start server immediately so Cloud Run health check passes
@@ -101,6 +119,13 @@ if (!MONGODB_URI) {
     console.error('ERROR: MONGODB_URI is not defined in .env');
     process.exit(1);
 }
+
+// A rejected promise nobody handles takes the whole process down in Node 15+, which on
+// Cloud Run means dropped requests. Logged instead, so one bad request cannot restart
+// the server for everyone.
+process.on('unhandledRejection', (reason: any) => {
+    console.error('Unhandled promise rejection:', reason?.message || reason);
+});
 
 console.log('Connecting to MongoDB...');
 mongoose.connect(MONGODB_URI)

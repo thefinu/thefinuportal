@@ -37,7 +37,7 @@ export default async function TermsPage() {
                     ) : (
                     <div className="prose prose-slate max-w-none space-y-6 text-slate-700 leading-relaxed text-sm">
                         <p>
-                            These Terms of Service (the "Terms") are a legally binding agreement between you and ThefinU, LLC ("ThefinU," "we," "us," and "our") and govern your access to and use of our website located at <a href="https://www.thefinu.com" className="text-secondary font-medium hover:underline">www.thefinu.com</a> and the related personal finance synchronization services, including any spreadsheet Add-ons or Add-ins, offered via the Google Workspace™ Marketplace (collectively, the "Services").
+                            These Terms of Service (the &quot;Terms&quot;) are a legally binding agreement between you and ThefinU, LLC (&quot;ThefinU,&quot; &quot;we,&quot; &quot;us,&quot; and &quot;our&quot;) and govern your access to and use of our website located at <a href="https://www.thefinu.com" className="text-secondary font-medium hover:underline">www.thefinu.com</a> and the related personal finance synchronization services, including any spreadsheet Add-ons or Add-ins, offered via the Google Workspace™ Marketplace (collectively, the &quot;Services&quot;).
                         </p>
 
                         <div className="p-4 bg-slate-50 border-l-4 border-primary rounded-r-lg">
@@ -62,10 +62,10 @@ export default async function TermsPage() {
                             <h2 className="text-xl font-bold text-slate-900 mt-12 mb-4">2. Linking Data Source Accounts and Data Aggregation (Plaid)</h2>
                             <h3 className="text-md font-bold text-slate-900 mt-6 mb-3">A. Authorization for Data Retrieval</h3>
                             <p>
-                                The Services facilitate the updating of your financial spreadsheets with up-to-date financial data ("Financial Data") retrieved from your banks, credit cards, and other third-party financial sources ("Data Sources").
+                                The Services facilitate the updating of your financial spreadsheets with up-to-date financial data (&quot;Financial Data&quot;) retrieved from your banks, credit cards, and other third-party financial sources (&quot;Data Sources&quot;).
                             </p>
                             <p>
-                                You acknowledge and agree that ThefinU uses the services of data aggregators, including Plaid, Inc. ("Plaid"), to access your Financial Data on your behalf. By using the Services, you authorize and direct ThefinU, through Plaid, to access the Data Source accounts you designate, using the log-in credentials you provide. For the sole purpose of providing the Services, you hereby grant ThefinU (and Plaid) a limited power of attorney to retrieve and use your information.
+                                You acknowledge and agree that ThefinU uses the services of data aggregators, including Plaid, Inc. (&quot;Plaid&quot;), to access your Financial Data on your behalf. By using the Services, you authorize and direct ThefinU, through Plaid, to access the Data Source accounts you designate, using the log-in credentials you provide. For the sole purpose of providing the Services, you hereby grant ThefinU (and Plaid) a limited power of attorney to retrieve and use your information.
                             </p>
                             <p className="p-4 bg-slate-50 rounded-lg italic text-slate-600 border border-slate-100">
                                 YOU ACKNOWLEDGE AND AGREE THAT WHEN THEFINU, EITHER DIRECTLY OR THROUGH PLAID, ACCESSES AND RETRIEVES INFORMATION FROM THIRD PARTY SITES, THEFINU IS ACTING AS YOUR AGENT, AND NOT THE AGENT OR ON BEHALF OF THE THIRD PARTY.
@@ -99,7 +99,7 @@ export default async function TermsPage() {
                             <h3 className="text-md font-bold text-slate-900 mt-6 mb-3">B. Google Limited Use Requirements</h3>
                             <p>By using the Google Add-on, you agree to the following mandatory limitations on our use of Google-sourced data:</p>
                             <ol className="list-decimal pl-6 space-y-3">
-                                <li><strong>Limited Use:</strong> ThefinU's use of data obtained from Google APIs (including data from your Google Sheets™ or your Google Account information) is strictly limited to providing and improving the features of the Services that are visible to the user.</li>
+                                <li><strong>Limited Use:</strong> ThefinU&apos;s use of data obtained from Google APIs (including data from your Google Sheets™ or your Google Account information) is strictly limited to providing and improving the features of the Services that are visible to the user.</li>
                                 <li><strong>Prohibition on Transfer/Sale:</strong> We will not transfer, sell, or use Google-sourced data for serving advertisements.</li>
                             </ol>
                         </section>
@@ -108,7 +108,7 @@ export default async function TermsPage() {
                             <h2 className="text-xl font-bold text-slate-900 mt-12 mb-4">5. Limitation of Liability and Warranties</h2>
                             <h3 className="text-md font-bold text-slate-900 mt-6 mb-3">A. Disclaimer of Warranties</h3>
                             <p className="uppercase text-sm tracking-wide text-slate-500 line-clamp-none">
-                                THE SERVICES AND ALL INFORMATION, PRODUCTS, AND OTHER CONTENT INCLUDED IN OR ACCESSIBLE FROM THE SITE AND SERVICES ARE PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS. THEFINU AND ITS SERVICE PROVIDERS (INCLUDING PLAID) EXPRESSLY DISCLAIM ALL WARRANTIES OF ANY KIND, WHETHER EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+                                THE SERVICES AND ALL INFORMATION, PRODUCTS, AND OTHER CONTENT INCLUDED IN OR ACCESSIBLE FROM THE SITE AND SERVICES ARE PROVIDED ON AN &quot;AS IS&quot; AND &quot;AS AVAILABLE&quot; BASIS. THEFINU AND ITS SERVICE PROVIDERS (INCLUDING PLAID) EXPRESSLY DISCLAIM ALL WARRANTIES OF ANY KIND, WHETHER EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
                             </p>
                             <h3 className="text-md font-bold text-slate-900 mt-6 mb-3">B. Limitation of Liability</h3>
                             <p className="uppercase text-sm tracking-wide text-slate-500">

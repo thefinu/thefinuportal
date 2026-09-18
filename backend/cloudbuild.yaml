@@ -32,7 +32,14 @@ steps:
       - '--allow-unauthenticated'
       - '--port=8080'
       - '--set-secrets=MONGODB_URI=MONGODB_URI:latest,JWT_SECRET=JWT_SECRET:latest,SMTP_PASS=SMTP_PASS:latest'
-      - '--update-env-vars=NODE_ENV=production,SMTP_HOST=smtp.gmail.com,SMTP_PORT=587,SMTP_USER=anna@thefinu.com,CONTACT_EMAIL=anna@thefinu.com,APP_BASE_URL=https://thefinu.com'
+      # One comma-separated list of KEY=VALUE pairs, with no spaces and no trailing
+      # comma: gcloud splits on commas, so a space becomes part of the next variable's
+      # NAME and a trailing comma is read as an empty pair. Either one fails the deploy.
+      #
+      # GAS_OAUTH_CLIENT_IDS is the OAuth client whose tokens this API accepts. To allow
+      # more than one, this flag cannot hold them — its own separator is the comma — so
+      # use the alternate delimiter form: '--update-env-vars=^@^GAS_OAUTH_CLIENT_IDS=id1,id2@NODE_ENV=production'
+      - '--update-env-vars=NODE_ENV=production,SMTP_HOST=smtp.gmail.com,SMTP_PORT=587,SMTP_USER=anna@thefinu.com,CONTACT_EMAIL=anna@thefinu.com,GAS_OAUTH_CLIENT_IDS=1014598876589-36dskb92hja91lj3ca1f7vp9ohgh5a5r.apps.googleusercontent.com,APP_BASE_URL=https://thefinu.com'
 
 images:
   - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY/backend:$COMMIT_SHA'

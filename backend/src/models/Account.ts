@@ -6,6 +6,7 @@ export interface IAccount extends Document {
     balance: number;
     color: string;
     user_id?: mongoose.Types.ObjectId | string;
+    spreadsheet_id?: string;
     account_id?: string;
     access_token?: string;
     item_id?: string;
@@ -32,9 +33,19 @@ const AccountSchema: Schema = new Schema({
 
     // Plaid Integration Fields
     user_id: { type: Schema.Types.ObjectId, ref: 'User' },
-    account_id: { type: String },
+
+    // The spreadsheet this account belongs to. Each spreadsheet connects its own banks
+    // and owns its own Plaid Item, so an account is never shared between them — which
+    // is what lets each spreadsheet keep its own cursor, link state and update flag on
+    // this record. Accounts created before this field exists have no value, and stay
+    // visible to any of their owner's spreadsheets until one claims them.
+    spreadsheet_id: { type: String, default: undefined, index: true },
+
+    account_id: { type: String, index: true },
     access_token: { type: String },
-    item_id: { type: String },
+    // Indexed: the Plaid webhook and Item removal both look accounts up by Item, and
+    // the webhook is called often enough that a collection scan there is a real cost.
+    item_id: { type: String, index: true },
     institution_id: { type: String },
     institution_name: { type: String },
     account_type: { type: String },

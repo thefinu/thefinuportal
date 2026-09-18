@@ -39,7 +39,6 @@ export default function PublicFooter() {
                             <li><Link href="/#features" className="hover:text-white transition-colors">Features</Link></li>
                             <li><Link href="/#how-it-works" className="hover:text-white transition-colors">How it Works</Link></li>
                             <li><Link href="/#pricing" className="hover:text-white transition-colors">Pricing</Link></li>
-                            <li><Link href="/#what-people-say" className="hover:text-white transition-colors">Reviews</Link></li>
                         </ul>
                     </div>
 

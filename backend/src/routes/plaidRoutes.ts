@@ -171,8 +171,7 @@ router.get('/pricing', auth, async (req, res) => {
 // POST /api/plaid/pricing — create a pricing model (admin)
 router.post('/pricing', auth, async (req, res) => {
     try {
-        const { product, rate, perCall, perMonth } = req.body;
-        console.log('[plaid/pricing POST] body:', req.body);
+        const { product, rate, perCall, perMonth } = req.body;
         if (!product || rate === undefined || rate === null) {
             return res.status(400).json({ message: 'product and rate are required' });
         }
@@ -192,8 +191,7 @@ router.post('/pricing', auth, async (req, res) => {
 // PUT /api/plaid/pricing/:id — update a pricing model (admin)
 router.put('/pricing/:id', auth, async (req, res) => {
     try {
-        const { product, rate, perCall, perMonth } = req.body;
-        console.log('[plaid/pricing PUT] body:', req.body);
+        const { product, rate, perCall, perMonth } = req.body;
         if (!product || rate === undefined || rate === null) {
             return res.status(400).json({ message: 'product and rate are required' });
         }

@@ -19,6 +19,10 @@ function SuccessContent() {
     useEffect(() => {
         const verifyPayment = async () => {
             if (!sessionId) {
+                // Nothing to verify. Showing the generic "your subscription is active"
+                // copy here told anyone who opened the page directly that a payment had
+                // gone through.
+                setError("We could not find a payment to confirm. If you have just subscribed, check your email for the receipt.");
                 setLoading(false);
                 return;
             }
@@ -78,7 +82,7 @@ function SuccessContent() {
                 </div>
 
                 <h1 className="mb-3 text-3xl font-bold tracking-tight text-slate-950">
-                    You're All Set!
+                    You&apos;re All Set!
                 </h1>
 
                 <p className="mb-8 text-slate-500 text-sm leading-relaxed">

@@ -17,9 +17,21 @@ router.get('/', auth, async (req, res) => {
     }
 });
 
+// Fields an admin may set when creating a transaction by hand. Passing req.body
+// straight into the model let every key in the request reach the document — including
+// ones the schema gains later, which nobody reviews again once the route works.
+const TRANSACTION_FIELDS = ['accountId', 'date', 'description', 'amount', 'type', 'category', 'notes'];
+
 // Create a transaction
 router.post('/', auth, async (req, res) => {
-    const transaction = new Transaction(req.body);
+    const payload: Record<string, unknown> = {};
+    for (const field of TRANSACTION_FIELDS) {
+        if (req.body && Object.prototype.hasOwnProperty.call(req.body, field)) {
+            payload[field] = req.body[field];
+        }
+    }
+
+    const transaction = new Transaction(payload);
     try {
         const newTransaction = await transaction.save();
 

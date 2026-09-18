@@ -1,6 +1,7 @@
 import express from 'express';
 import Content from '../models/Content.js';
 import { auth } from '../middleware/authMiddleware.js';
+import { sanitizeContent } from '../utils/sanitizeHtml.js';
 
 const router = express.Router();
 
@@ -19,10 +20,16 @@ router.post('/:section', auth, async (req, res) => {
         if (data === undefined || data === null) {
             return res.status(400).json({ message: 'data is required' });
         }
+
+        // The privacy and terms pages render this with dangerouslySetInnerHTML, so
+        // anything executable stored here runs in every visitor's browser. Sanitised on
+        // the way IN, so the stored copy is safe for everything that reads it later.
+        const safeData = sanitizeContent(data);
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const content = await Content.findOneAndUpdate(
             { section: req.params.section } as any,
-            { $set: { data }, $setOnInsert: { section: req.params.section } },
+            { $set: { data: safeData }, $setOnInsert: { section: req.params.section } },
             { upsert: true, new: true, setDefaultsOnInsert: true }
         ).lean<{ data: unknown } | null>();
         res.json({ status: 'success', data: content?.data });

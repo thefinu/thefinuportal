@@ -6,8 +6,15 @@
 
 import { MongoClient } from 'mongodb';
 
-const SOURCE_URI = 'mongodb+srv://govind_db_user:XKNmRf8rd7GbAa7p@cluster0.ya8tk4j.mongodb.net/?appName=Cluster0';
-const TARGET_URI = 'mongodb+srv://thefinudb:anna%40thefinu123@cluster0.y0u2akb.mongodb.net/?appName=Cluster0';
+const SOURCE_URI = process.env.SOURCE_MONGODB_URI || '';
+const TARGET_URI = process.env.TARGET_MONGODB_URI || '';
+
+if (!SOURCE_URI || !TARGET_URI) {
+    console.error('SOURCE_MONGODB_URI and TARGET_MONGODB_URI must be set.');
+    console.error('They used to be hard-coded here, which put live database passwords into git.');
+    console.error('Run: SOURCE_MONGODB_URI="..." TARGET_MONGODB_URI="..." node migrate.mjs');
+    process.exit(1);
+}
 
 // System databases to skip
 const SKIP_DBS = new Set(['admin', 'config', 'local']);
