@@ -27,18 +27,47 @@ function SuccessContent() {
                 return;
             }
 
-            try {
-                const res = await api.post("/payment/verify-session", { sessionId });
-                setDetails(res.data.data);
-            } catch (err: any) {
-                console.error("Payment verification failed", err);
-                setError("Could not verify payment details. Please contact support.");
-            } finally {
-                setLoading(false);
+            // The Stripe webhook records the subscription at the same moment this page
+            // loads, so a first attempt can briefly collide with it or reach a starting
+            // server. Those failures are transient: retry them. A 4xx answer is a real
+            // verdict (e.g. the purchase was refunded) and is shown as-is.
+            const MAX_ATTEMPTS = 4;
+            for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                try {
+                    const res = await api.post("/payment/verify-session", { sessionId });
+                    if (cancelled) return;
+                    setDetails(res.data.data);
+                    setLoading(false);
+                    return;
+                } catch (err: any) {
+                    const status: number | undefined = err?.response?.status;
+                    const transient = !status || status >= 500 || status === 503;
+                    if (transient && attempt < MAX_ATTEMPTS) {
+                        await new Promise((r) => setTimeout(r, 1000 * attempt));
+                        if (cancelled) return;
+                        continue;
+                    }
+                    console.error("Payment verification failed", err);
+                    if (cancelled) return;
+                    const serverMessage: string | undefined = err?.response?.data?.message;
+                    if (status && status < 500 && serverMessage) {
+                        setError(serverMessage);
+                    } else if (status === 429) {
+                        setError("Too many attempts. Please wait a few minutes and refresh this page.");
+                    } else {
+                        setError("We could not confirm your payment yet. Your payment is safe; refresh this page in a moment, or contact support if this continues.");
+                    }
+                    setLoading(false);
+                    return;
+                }
             }
         };
 
+        let cancelled = false;
         verifyPayment();
+        return () => {
+            cancelled = true;
+        };
     }, [sessionId]);
 
     if (loading) {

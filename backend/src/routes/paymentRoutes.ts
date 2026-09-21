@@ -37,10 +37,11 @@ async function resolvePrice(
     interval: string | undefined,
     isDev = false,
 ): Promise<{ priceId: string; trialDays: number | null }> {
-    if (!planId) {
-        throw new Error('A plan must be selected for checkout');
-    }
-    const plan = await Plan.findById(planId);
+    // The add-on may not know a plan id. Fall back to the first active plan
+    // (admin display order) so it can still go straight to a prefilled checkout.
+    const plan = planId
+        ? await Plan.findById(planId)
+        : await Plan.findOne({ active: true }).sort({ displayOrder: 1, createdAt: 1 });
     if (!plan || !plan.active) {
         throw new Error('Selected plan is not available');
     }
@@ -256,6 +257,25 @@ type CheckoutOutcome =
  * an old session could be replayed after cancelling to regain access for good.
  */
 async function applyCheckoutSession(session: Stripe.Checkout.Session, fromDevAccount: boolean, stripe: Stripe): Promise<CheckoutOutcome> {
+    // The checkout.session.completed webhook and the success page's verify-session call
+    // arrive together, and both create the user and subscription. For a new customer both
+    // see "nothing there" and both insert, so one hits a duplicate-key error (E11000).
+    // The loser simply runs again: this time the winner's rows exist and are updated.
+    // Relying on the database's unique indexes (not an in-memory lock) also holds across
+    // several Cloud Run instances.
+    const MAX_ATTEMPTS = 4;
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await applyCheckoutSessionOnce(session, fromDevAccount, stripe);
+        } catch (err: any) {
+            const isDuplicateKey = err?.code === 11000 || /E11000/.test(err?.message || '');
+            if (!isDuplicateKey || attempt >= MAX_ATTEMPTS) throw err;
+            await new Promise((r) => setTimeout(r, 100 * attempt));
+        }
+    }
+}
+
+async function applyCheckoutSessionOnce(session: Stripe.Checkout.Session, fromDevAccount: boolean, stripe: Stripe): Promise<CheckoutOutcome> {
     if (session.status !== 'complete') {
         return { ok: false, status: 409, message: 'Checkout is not complete yet' };
     }

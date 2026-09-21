@@ -17,7 +17,7 @@ export interface ISubscription extends Document {
 
 const SubscriptionSchema: Schema = new Schema({
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    stripeSubscriptionId: { type: String, required: true },
+    stripeSubscriptionId: { type: String, required: true, unique: true },
     stripeCustomerId: { type: String, required: true },
     planName: { type: String, required: true },
     amount: { type: Number, required: true },
