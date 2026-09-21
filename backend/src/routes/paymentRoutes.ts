@@ -439,32 +439,32 @@ router.post('/unsubscribe', gasAuth, async (req: GasAuthRequest, res) => {
             });
         }
 
-        // 1. Cancel each subscription under the refund policy: a payment made within the
-        //    last REFUND_WINDOW_DAYS is refunded and the subscription ends now; otherwise
-        //    it runs to the end of the paid period with no refund. This used to refund the
-        //    full last invoice however long ago it was paid.
+        // 1. Cancelling ends the subscription NOW, in every case — paid, trialing, or
+        //    anything else — and the account and its data are removed with it.
+        //
+        //    The refund window still decides the MONEY: a payment made within the last
+        //    REFUND_WINDOW_DAYS is refunded. An older payment is not, and the remaining
+        //    paid time is given up, because the user asked to be gone rather than to be
+        //    scheduled. Subscriptions used to run to the end of the paid period instead,
+        //    which left a trialing user still subscribed in Stripe and still present
+        //    here after they had cancelled.
         const subscriptions = await Subscription.find({ userId: user._id });
         const stripe = await getStripe(user.email);
         const results: Array<Record<string, unknown>> = [];
-        let scheduledEnd: Date | null = null;
 
         for (const sub of subscriptions) {
             try {
-                if (await latestPaymentWithinDays(stripe, sub.stripeSubscriptionId, REFUND_WINDOW_DAYS)) {
-                    const refund = await refundSubscription(stripe, sub.stripeSubscriptionId);
-                    await stripe.subscriptions.cancel(sub.stripeSubscriptionId);
-                    results.push({
-                        id: sub.stripeSubscriptionId,
-                        status: 'canceled',
-                        refunded: refund ? `${refund.amount / 100} ${refund.currency}` : 'no payment to refund',
-                    });
-                } else {
-                    await stripe.subscriptions.update(sub.stripeSubscriptionId, { cancel_at_period_end: true });
-                    sub.cancelAtPeriodEnd = true;
-                    await sub.save();
-                    if (!scheduledEnd || sub.currentPeriodEnd > scheduledEnd) scheduledEnd = sub.currentPeriodEnd;
-                    results.push({ id: sub.stripeSubscriptionId, status: 'cancels_at_period_end', periodEnd: sub.currentPeriodEnd });
-                }
+                // Refundable only inside the window; cancelled either way, below.
+                const refundable = await latestPaymentWithinDays(stripe, sub.stripeSubscriptionId, REFUND_WINDOW_DAYS);
+                const refund = refundable ? await refundSubscription(stripe, sub.stripeSubscriptionId) : null;
+
+                await stripe.subscriptions.cancel(sub.stripeSubscriptionId);
+
+                results.push({
+                    id: sub.stripeSubscriptionId,
+                    status: 'canceled',
+                    refunded: refund ? `${refund.amount / 100} ${refund.currency}` : 'no refund due',
+                });
             } catch (stripeErr: any) {
                 if (stripeErr.code === 'resource_missing' || (stripeErr.message && stripeErr.message.includes('No such subscription'))) {
                     results.push({ id: sub.stripeSubscriptionId, status: 'canceled (already missing in Stripe)' });
@@ -484,20 +484,8 @@ router.post('/unsubscribe', gasAuth, async (req: GasAuthRequest, res) => {
             });
         }
 
-        // Anything running to the end of its period keeps the user's data until then;
-        // the "subscription deleted" webhook clears it when the period is over.
-        if (scheduledEnd) {
-            user.cancelAtPeriodEnd = true;
-            await user.save();
-            return res.json({
-                status: 'success',
-                scheduled: true,
-                dataRetained: true,
-                periodEnd: scheduledEnd,
-                message: `Your subscription will end on ${scheduledEnd.toDateString()}. No refund is due because your last payment was more than ${REFUND_WINDOW_DAYS} days ago. Your data stays until then.`,
-                results,
-            });
-        }
+        // Nothing is scheduled any more: every subscription above was cancelled outright,
+        // so the deletion below always runs.
 
         // Delete Stripe customer if exists
         const customerId = subscriptions[0]?.stripeCustomerId;
