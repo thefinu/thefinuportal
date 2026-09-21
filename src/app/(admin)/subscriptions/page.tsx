@@ -31,14 +31,16 @@ export default function SubscriptionsPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
     const [loading, setLoading] = useState(true);
+    const [mode, setMode] = useState<"live" | "test">("live");
     const [extendModal, setExtendModal] = useState<Subscription | null>(null);
     const [extendDays, setExtendDays] = useState(30);
     const [extending, setExtending] = useState(false);
     const [extendMessage, setExtendMessage] = useState("");
 
-    const fetchSubscriptions = async () => {
+    const fetchSubscriptions = async (m = mode) => {
+        setLoading(true);
         try {
-            const res = await api.get("/payment/subscriptions");
+            const res = await api.get("/payment/subscriptions", { params: m === "test" ? { mode: "test" } : {} });
             setSubscriptions(res.data);
         } catch (err) {
             console.error("Failed to fetch subscriptions", err);
@@ -48,8 +50,8 @@ export default function SubscriptionsPage() {
     };
 
     useEffect(() => {
-        fetchSubscriptions();
-    }, []);
+        fetchSubscriptions(mode);
+    }, [mode]);
 
     const handleExtendTrial = async () => {
         if (!extendModal) return;
@@ -82,7 +84,21 @@ export default function SubscriptionsPage() {
         <div className="p-8">
             <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-bold text-slate-900">Subscriptions</h1>
-                <div className="flex gap-3">
+                <div className="flex gap-3 items-center">
+                    <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm font-medium">
+                        <button
+                            onClick={() => setMode("live")}
+                            className={`px-4 py-2 transition-colors ${mode === "live" ? "bg-emerald-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                        >
+                            Live
+                        </button>
+                        <button
+                            onClick={() => setMode("test")}
+                            className={`px-4 py-2 transition-colors border-l border-slate-200 ${mode === "test" ? "bg-amber-500 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                        >
+                            Test
+                        </button>
+                    </div>
                     <button className="flex items-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
                         <Download className="mr-2 h-4 w-4" />
                         Export
