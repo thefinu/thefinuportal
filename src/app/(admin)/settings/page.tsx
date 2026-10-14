@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Save, Loader2, Info, Key, Globe, Mail, FileText, CreditCard, Plus, Pencil, Trash2, X, Check } from "lucide-react";
+import { Save, Loader2, Info, Key, Globe, Mail, FileText, CreditCard, Plus, Pencil, Trash2, X, Check, FlaskConical, AlertTriangle } from "lucide-react";
 import api from "@/lib/api";
 
 interface PlaidPricing {
@@ -37,7 +37,25 @@ export default function SettingsPage() {
         smtpUser: "",
         smtpPass: "",
         contactEmail: "",
+
+        // Development Environment. When devEnabled is on, any user whose email is in
+        // devUsers is served these TEST credentials instead of the live ones above —
+        // see backend utils/envCredentials.ts. Everyone else is unaffected.
+        devEnabled: false,
+        devUsers: [] as string[],
+        devPlaidClientKey: "",
+        devPlaidSecretKey: "",
+        devPlaidEnvironment: "sandbox",
+        devPlaidWebhookUrl: "",
+        devStripePublicKey: "",
+        devStripeSecretKey: "",
+        devStripeWebhookSecret: "",
     });
+
+    // Draft text for the "add developer" box. Kept out of `settings` so an unconfirmed
+    // entry is never posted.
+    const [devUserDraft, setDevUserDraft] = useState("");
+    const [devUserError, setDevUserError] = useState("");
 
     // Plaid Pricing state
     const [pricing, setPricing] = useState<PlaidPricing[]>([]);
@@ -54,7 +72,14 @@ export default function SettingsPage() {
             try {
                 const res = await api.get("/settings");
                 if (res.data) {
-                    setSettings(res.data);
+                    // Merged onto the defaults rather than replacing them: a settings
+                    // document saved before a field existed omits it entirely, and a
+                    // missing devUsers would leave the list undefined and break render.
+                    setSettings(prev => ({
+                        ...prev,
+                        ...res.data,
+                        devUsers: Array.isArray(res.data.devUsers) ? res.data.devUsers : [],
+                    }));
                 }
             } catch (err) {
                 console.error("Failed to fetch settings", err);
@@ -95,6 +120,34 @@ export default function SettingsPage() {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setSettings(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleToggle = (name: string, checked: boolean) => {
+        setSettings(prev => ({ ...prev, [name]: checked }));
+    };
+
+    const addDevUser = () => {
+        const email = devUserDraft.trim().toLowerCase();
+        if (!email) return;
+        // Deliberately permissive — just enough to catch a typo before it silently
+        // fails to match any real account.
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            setDevUserError("That does not look like an email address.");
+            return;
+        }
+        // The backend compares trimmed and lowercased on both sides, so a duplicate
+        // differing only in case would be dead weight in the list.
+        if (settings.devUsers.some(e => (e || "").trim().toLowerCase() === email)) {
+            setDevUserError("That email is already on the list.");
+            return;
+        }
+        setSettings(prev => ({ ...prev, devUsers: [...prev.devUsers, email] }));
+        setDevUserDraft("");
+        setDevUserError("");
+    };
+
+    const removeDevUser = (email: string) => {
+        setSettings(prev => ({ ...prev, devUsers: prev.devUsers.filter(e => e !== email) }));
     };
 
     const openAddPricing = () => {
@@ -295,6 +348,174 @@ export default function SettingsPage() {
                                 <option value="sandbox">Sandbox</option>
                                 <option value="production">Production</option>
                             </select>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Development Environment — test credentials for allowlisted users */}
+                <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-4">
+                        <div className="flex items-center">
+                            <FlaskConical className="mr-2 h-5 w-5 text-secondary" />
+                            <h2 className="text-lg font-bold text-slate-900">Development Environment</h2>
+                        </div>
+                        <label className="flex cursor-pointer items-center gap-2">
+                            <span className="text-sm font-medium text-slate-700">
+                                {settings.devEnabled ? "Enabled" : "Disabled"}
+                            </span>
+                            <input
+                                type="checkbox"
+                                name="devEnabled"
+                                checked={!!settings.devEnabled}
+                                onChange={(e) => handleToggle("devEnabled", e.target.checked)}
+                                className="h-4 w-4 rounded border-slate-300 text-secondary focus:ring-secondary"
+                            />
+                        </label>
+                    </div>
+
+                    <p className="mb-5 text-sm text-slate-500">
+                        Users on this list are served the test Plaid and Stripe credentials below, so they
+                        can exercise the real add-on against sandbox data. Everyone else continues to use
+                        the live credentials. Nothing applies unless this section is enabled.
+                    </p>
+
+                    {/* Allowlist */}
+                    <div className="mb-6">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Allowlisted Emails</label>
+                        <div className="flex gap-2">
+                            <input
+                                type="email"
+                                value={devUserDraft}
+                                onChange={(e) => { setDevUserDraft(e.target.value); setDevUserError(""); }}
+                                // Enter inside a form submits it, which would save the settings
+                                // before the typed email had been added to the list.
+                                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDevUser(); } }}
+                                className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none"
+                                placeholder="developer@example.com"
+                            />
+                            <button
+                                type="button"
+                                onClick={addDevUser}
+                                className="flex shrink-0 items-center rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 transition-all"
+                            >
+                                <Plus className="mr-1 h-4 w-4" />
+                                Add
+                            </button>
+                        </div>
+                        {devUserError && (
+                            <p className="mt-1 text-xs text-rose-600">{devUserError}</p>
+                        )}
+
+                        {settings.devUsers.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {settings.devUsers.map((email) => (
+                                    <span
+                                        key={email}
+                                        className="flex items-center rounded-full bg-slate-100 py-1 pl-3 pr-1 text-sm text-slate-700"
+                                    >
+                                        {email}
+                                        <button
+                                            type="button"
+                                            onClick={() => removeDevUser(email)}
+                                            aria-label={`Remove ${email}`}
+                                            className="ml-1 rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-rose-600 transition-all"
+                                        >
+                                            <X className="h-3.5 w-3.5" />
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="mt-3 text-sm text-slate-400">No developers on the list.</p>
+                        )}
+                    </div>
+
+                    {settings.devEnabled && settings.devUsers.length === 0 && (
+                        <div className="mb-6 flex items-start rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-700">
+                            <AlertTriangle className="mr-2 mt-0.5 h-4 w-4 shrink-0" />
+                            The Development Environment is enabled but no emails are listed, so every user
+                            is still served the live credentials.
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Test Plaid Client Key</label>
+                            <input
+                                type="text"
+                                name="devPlaidClientKey"
+                                value={settings.devPlaidClientKey}
+                                onChange={handleChange}
+                                className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none"
+                                placeholder="Plaid sandbox client ID"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Test Plaid Secret Key</label>
+                            <input
+                                type="password"
+                                name="devPlaidSecretKey"
+                                value={settings.devPlaidSecretKey}
+                                onChange={handleChange}
+                                className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none"
+                                placeholder="Plaid sandbox secret"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Test Plaid Environment</label>
+                            <select
+                                name="devPlaidEnvironment"
+                                value={settings.devPlaidEnvironment}
+                                onChange={handleChange}
+                                className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none bg-white"
+                            >
+                                <option value="sandbox">Sandbox</option>
+                                <option value="production">Production</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Test Plaid Webhook URL</label>
+                            <input
+                                type="text"
+                                name="devPlaidWebhookUrl"
+                                value={settings.devPlaidWebhookUrl}
+                                onChange={handleChange}
+                                className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none"
+                                placeholder="https://..."
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Test Stripe Public Key</label>
+                            <input
+                                type="text"
+                                name="devStripePublicKey"
+                                value={settings.devStripePublicKey}
+                                onChange={handleChange}
+                                className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none"
+                                placeholder="pk_test_..."
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Test Stripe Secret Key</label>
+                            <input
+                                type="password"
+                                name="devStripeSecretKey"
+                                value={settings.devStripeSecretKey}
+                                onChange={handleChange}
+                                className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none"
+                                placeholder="sk_test_..."
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Test Stripe Webhook Secret</label>
+                            <input
+                                type="password"
+                                name="devStripeWebhookSecret"
+                                value={settings.devStripeWebhookSecret}
+                                onChange={handleChange}
+                                className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm focus:border-secondary focus:outline-none"
+                                placeholder="whsec_..."
+                            />
                         </div>
                     </div>
                 </div>
