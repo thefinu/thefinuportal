@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // Routes exclusively served on admin.thefinu.com
-const ADMIN_PATHS = ['/dashboard', '/users', '/accounts', '/settings', '/subscriptions', '/cms', '/plans'];
+const ADMIN_PATHS = ['/dashboard', '/users', '/accounts', '/settings', '/subscriptions', '/cms', '/plans', '/plaid-test'];
 
 // Routes exclusively served on thefinu.com (public)
 const PUBLIC_ONLY_PATHS = ['/', '/about', '/contact', '/privacy', '/terms', '/cancel', '/success', '/help'];

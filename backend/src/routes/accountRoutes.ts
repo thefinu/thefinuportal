@@ -237,6 +237,87 @@ router.get('/admin/by-user', auth, async (req, res) => {
     }
 });
 
+/**
+ * Users for the admin "Plaid Test" screen's dropdown — only ones with at least one
+ * connected account, since that screen has nothing to show for anyone else.
+ */
+router.get('/admin/plaid-test/users', auth, async (req, res) => {
+    try {
+        const userIds = await Account.distinct('user_id', { user_id: { $ne: null } });
+        const users = await User.find({ _id: { $in: userIds } })
+            .select('_id email')
+            .sort({ email: 1 })
+            .lean();
+        res.json(users.map((u: any) => ({ id: String(u._id), email: u.email })));
+    } catch (err: any) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+/**
+ * Full Plaid account detail for one user, as JSON, for the admin "Plaid Test" screen.
+ * This is a debugging view, not the regular accounts list — it is deliberately more
+ * complete (cursor, item id, environment, link rows) so an admin can see exactly what
+ * the add-on and the Plaid webhook are working with. The access token is still never
+ * included; everything that calls Plaid does so server-side, and no admin screen needs
+ * the raw secret to debug a connection.
+ */
+router.get('/admin/plaid-test/accounts', auth, async (req, res) => {
+    try {
+        const userId = String(req.query.userId || '').trim();
+        if (!userId) {
+            return res.status(400).json({ message: 'userId is required' });
+        }
+
+        const user = await User.findById(userId).select('_id email isSubscribed isFreeUser').lean();
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const accounts = await Account.find({ user_id: userId })
+            .sort({ createdAt: -1 })
+            .lean();
+
+        const accountIds = accounts.map((a: any) => a.account_id).filter(Boolean);
+        const links = accountIds.length
+            ? await SpreadsheetAccount.find({ account_id: { $in: accountIds } })
+                .select('account_id spreadsheetId is_linked is_update next_cursor')
+                .lean()
+            : [];
+        const linksByAccount = new Map<string, any[]>();
+        for (const link of links as any[]) {
+            const list = linksByAccount.get(link.account_id) || [];
+            list.push({
+                spreadsheetId: link.spreadsheetId,
+                isLinked: link.is_linked === true,
+                hasPendingUpdates: link.is_update === true,
+                nextCursor: link.next_cursor || null,
+            });
+            linksByAccount.set(link.account_id, list);
+        }
+
+        const detailed = accounts.map((account: any) => {
+            const { access_token, ...rest } = account;
+            return {
+                ...rest,
+                _id: String(account._id),
+                user_id: account.user_id ? String(account.user_id) : null,
+                hasAccessToken: !!access_token, // the token itself is never sent to the client
+                spreadsheets: linksByAccount.get(account.account_id) || [],
+            };
+        });
+
+        res.json({
+            user: { id: String(user._id), email: user.email, isSubscribed: user.isSubscribed === true, isFreeUser: user.isFreeUser === true },
+            accountCount: detailed.length,
+            accounts: detailed,
+        });
+    } catch (err: any) {
+        console.error('Plaid test accounts error:', err?.message);
+        res.status(500).json({ message: err.message || 'Could not load accounts' });
+    }
+});
+
 // Create an account (admin)
 router.post('/', auth, async (req, res) => {
     const payload: Record<string, unknown> = {};

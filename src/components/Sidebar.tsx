@@ -10,7 +10,8 @@ import {
     LogOut,
     CreditCard,
     FileText,
-    Tag
+    Tag,
+    FlaskConical
 } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -26,6 +27,7 @@ const menuItems = [
     { name: "Plans", href: "/plans", icon: Tag },
     { name: "Subscriptions", href: "/subscriptions", icon: CreditCard },
     { name: "CMS", href: "/cms", icon: FileText },
+    { name: "Plaid Test", href: "/plaid-test", icon: FlaskConical },
     { name: "Settings", href: "/settings", icon: Settings },
 ];
 
