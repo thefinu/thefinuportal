@@ -108,19 +108,47 @@ router.post('/link-token', gasAuth, async (req, res) => {
         }
         const { user, creds } = ctx;
 
+        const linkPayload: Record<string, unknown> = {
+            client_id: creds.clientKey,
+            secret: creds.secretKey,
+            user: { client_user_id: String(user._id) },
+            client_name: 'TheFinU',
+            products: req.body.products || ['transactions'],
+            country_codes: req.body.country_codes || ['US'],
+            language: 'en',
+            webhook: creds.webhookUrl || undefined,
+        };
+        // Requested alongside `products` but never required for Link to succeed: an
+        // institution that doesn't support a listed optional product (e.g. a checking-only
+        // bank asked for investments) is simply linked without it, instead of failing Link
+        // outright the way an unsupported entry in `products` would. Without this, every
+        // account connected through this proxy got only `transactions` — Plaid never
+        // activates `investments` for the Item, so an investment account's holdings and
+        // transactions are never flagged by webhook and the daily auto-sync has nothing to
+        // pick up, forever.
+        if (Array.isArray(req.body.optional_products) && req.body.optional_products.length > 0) {
+            linkPayload.optional_products = req.body.optional_products;
+        }
+        // Update mode: re-opening Link for an Item that already exists, to grant an
+        // additional product (e.g. investments) without creating a second, separately
+        // billed Item for the same bank. The add-on only ever sends the account_id it
+        // already has — never a raw access_token, which would put the secret back in the
+        // client this proxy exists to keep it out of.
+        if (typeof req.body.account_id === 'string' && req.body.account_id) {
+            const existing = await findCallerAccount(user, req.body.account_id);
+            if (!existing) {
+                return res.status(404).json({ message: 'Account not found' });
+            }
+            linkPayload.access_token = existing.access_token;
+            // Plaid resolves `user` from the access_token in update mode; sending a new
+            // client_user_id alongside it is rejected.
+            delete linkPayload.user;
+        }
+
         const response = await fetch(`${creds.baseUrl}/link/token/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                client_id: creds.clientKey,
-                secret: creds.secretKey,
-                user: { client_user_id: String(user._id) },
-                client_name: 'TheFinU',
-                products: req.body.products || ['transactions'],
-                country_codes: req.body.country_codes || ['US'],
-                language: 'en',
-                webhook: creds.webhookUrl || undefined,
-            }),
+            body: JSON.stringify(linkPayload),
         });
 
         const data = await response.json();
