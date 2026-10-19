@@ -140,9 +140,10 @@ router.post('/link-token', gasAuth, async (req, res) => {
                 return res.status(404).json({ message: 'Account not found' });
             }
             linkPayload.access_token = existing.access_token;
-            // Plaid resolves `user` from the access_token in update mode; sending a new
-            // client_user_id alongside it is rejected.
-            delete linkPayload.user;
+            // `user` is still required by Plaid even in update mode — dropping it (an
+            // assumption from general Plaid docs that didn't hold for this request
+            // shape) got "INVALID_FIELD: one of user or user_id is required" back from
+            // Plaid itself, confirmed directly against production before this fix.
         }
 
         const response = await fetch(`${creds.baseUrl}/link/token/create`, {
