@@ -1,37 +1,7 @@
 import { Router, type Request, type Response } from 'express';
-import nodemailer from 'nodemailer';
-import Settings from '../models/Settings.js';
+import { getMailerConfig, escapeHtml } from '../utils/mailer.js';
 
 const router = Router();
-
-async function getMailerConfig() {
-    const settings = await Settings.findOne();
-    const host = settings?.smtpHost || process.env.SMTP_HOST || 'smtp.gmail.com';
-    const port = settings?.smtpPort || Number(process.env.SMTP_PORT) || 587;
-    const user = settings?.smtpUser || process.env.SMTP_USER || '';
-    const pass = settings?.smtpPass || process.env.SMTP_PASS || '';
-    const contactEmail = settings?.contactEmail || process.env.CONTACT_EMAIL || 'anna@thefinu.com';
-
-    const transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: false,
-        auth: { user, pass },
-    });
-
-    return { transporter, user, contactEmail };
-}
-
-// Everything a visitor types ends up in an HTML email, so it is escaped. Unescaped,
-// the form delivered arbitrary HTML (links, forms, tracking images) to the inbox.
-function escapeHtml(value: unknown): string {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
 
 // Single-line text for the sender name and subject.
 function headerText(value: unknown, maxLength: number): string {

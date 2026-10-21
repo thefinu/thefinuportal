@@ -23,6 +23,15 @@ export interface IAccount extends Document {
     status: boolean;
     is_update: boolean;
     isSubscribed: boolean;
+    // Set when Plaid reports this Item needs the user to reconnect (ITEM_LOGIN_REQUIRED
+    // or PENDING_EXPIRATION) — see the plaid-webhook route. Cleared once the user
+    // completes update-mode Link again. While set, the daily auto-sync still attempts
+    // the account (it does not gate on this flag) so a resolved Item recovers on its
+    // own; this exists so the user gets told, rather than syncing just going quiet.
+    needsReconnect: boolean;
+    needsReconnectReason?: string;
+    needsReconnectAt?: Date;
+    reconnectNotifiedAt?: Date;
 }
 
 const AccountSchema: Schema = new Schema({
@@ -66,7 +75,16 @@ const AccountSchema: Schema = new Schema({
     next_cursor: { type: String, default: null },
     status: { type: Boolean, default: true },
     is_update: { type: Boolean, default: false },
-    isSubscribed: { type: Boolean, default: false }
+    isSubscribed: { type: Boolean, default: false },
+
+    needsReconnect: { type: Boolean, default: false },
+    needsReconnectReason: { type: String, default: undefined },
+    needsReconnectAt: { type: Date, default: undefined },
+    // Throttles the reconnect email: Plaid can send ITEM_LOGIN_REQUIRED repeatedly for
+    // the same Item while it's broken, and PENDING_EXPIRATION is sent more than once
+    // as the expiry date approaches. Without this, each delivery would re-email the
+    // user the backend already told them about.
+    reconnectNotifiedAt: { type: Date, default: undefined },
 }, { timestamps: true, collection: 'accounts' });
 
 export default mongoose.model<IAccount>('Account', AccountSchema);

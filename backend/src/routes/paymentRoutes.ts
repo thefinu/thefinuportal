@@ -17,6 +17,7 @@ import { getStripe, STRIPE_API_VERSION } from '../utils/stripeClient.js';
 import { resolvePlaidCredentials, isDevUser } from '../utils/envCredentials.js';
 import { ensureDevPlanPrices, getDevStripe } from '../utils/devStripePlans.js';
 import { reportModeMismatch, subscriptionModeFilter } from '../utils/recordMode.js';
+import { logAccountEvent } from '../utils/accountAudit.js';
 
 const router = express.Router();
 
@@ -514,6 +515,15 @@ router.post('/unsubscribe', gasAuth, async (req: GasAuthRequest, res) => {
         // access token isn't lost while the Item is still billed.
         const { removableAccountIds } = await removePlaidItemsForAccounts(accounts, user.email);
 
+        const removableIdSet = new Set(removableAccountIds.map((id) => String(id)));
+        await Promise.all(accounts
+            .filter((a) => removableIdSet.has(String(a._id)))
+            .map((a) => logAccountEvent({
+                accountId: String(a._id), userId: user._id, userEmail: user.email, event: 'deleted',
+                reason: 'Unsubscribe: user data deletion', accountIdPlaid: a.account_id,
+                institutionName: a.institution_name, previousItemId: a.item_id || null,
+            })));
+
         // 4. Delete accounts
         await Account.deleteMany({ _id: { $in: removableAccountIds } });
 
@@ -715,6 +725,15 @@ async function handleSubscriptionCanceled(stripeSubscription: Stripe.Subscriptio
     // Accounts whose Plaid Item couldn't be removed are kept (status false), so the
     // access token isn't lost while the Item is still billed.
     const { removableAccountIds } = await removePlaidItemsForAccounts(accounts, user.email);
+
+    const removableIdSet = new Set(removableAccountIds.map((id) => String(id)));
+    await Promise.all(accounts
+        .filter((a) => removableIdSet.has(String(a._id)))
+        .map((a) => logAccountEvent({
+            accountId: String(a._id), userId: user._id, userEmail: user.email, event: 'deleted',
+            reason: 'Subscription cancelled (webhook)', accountIdPlaid: a.account_id,
+            institutionName: a.institution_name, previousItemId: a.item_id || null,
+        })));
 
     // Delete accounts, spreadsheets, and user
     await Account.deleteMany({ _id: { $in: removableAccountIds } });

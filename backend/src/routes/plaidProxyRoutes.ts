@@ -7,6 +7,7 @@ import { resolvePlaidCredentials } from '../utils/envCredentials.js';
 import { plaidEnvFromToken } from '../utils/recordMode.js';
 import SpreadsheetAccount from '../models/SpreadsheetAccount.js';
 import { verifiedSpreadsheetId, SpreadsheetAccessError } from '../utils/spreadsheetAccess.js';
+import { logAccountEvent } from '../utils/accountAudit.js';
 
 const router = express.Router();
 
@@ -221,7 +222,12 @@ router.post('/exchange', gasAuth, async (req, res) => {
                 account_name: acc.name || undefined,
             };
 
-            return Account.findOneAndUpdate(
+            // Read before writing, purely to tell an update from an insert for the
+            // audit log below — findOneAndUpdate's result can't distinguish them on its
+            // own without relying on a Mongoose version-specific option.
+            const before = await Account.findOne(filter).select('_id item_id').lean();
+
+            const updated = await Account.findOneAndUpdate(
                 filter,
                 {
                     $set: {
@@ -229,7 +235,13 @@ router.post('/exchange', gasAuth, async (req, res) => {
                         access_token: accessToken,
                         item_id: itemId,
                         plaidEnv,
+                        // A successful re-link always means the Item works again, even
+                        // if it was flagged needsReconnect from a stale previous
+                        // connection — LOGIN_REPAIRED covers the common case (the SAME
+                        // Item recovering), this covers getting a brand new Item instead.
+                        needsReconnect: false,
                     },
+                    $unset: { needsReconnectReason: '', needsReconnectAt: '', reconnectNotifiedAt: '' },
                     $setOnInsert: {
                         institution_name: instName,
                         account_type: acc.type,
@@ -251,6 +263,26 @@ router.post('/exchange', gasAuth, async (req, res) => {
                 },
                 { upsert: true, new: true, runValidators: true },
             );
+
+            // See the AccountAudit model: this is the single place a relink — the exact
+            // event behind the item_id mismatch this was added after — gets recorded,
+            // so the next one is a lookup instead of a reconstruction.
+            if (!before) {
+                await logAccountEvent({
+                    accountId: String(updated._id), userId: user._id, userEmail: user.email,
+                    event: 'created', reason: 'Plaid exchange: new institution+mask+name combination',
+                    accountIdPlaid: updated.account_id, institutionName: instName, newItemId: itemId,
+                });
+            } else if (before.item_id && before.item_id !== itemId) {
+                await logAccountEvent({
+                    accountId: String(updated._id), userId: user._id, userEmail: user.email,
+                    event: 'relinked', reason: 'Plaid exchange: existing account matched, Item replaced',
+                    accountIdPlaid: updated.account_id, institutionName: instName,
+                    previousItemId: before.item_id, newItemId: itemId,
+                });
+            }
+
+            return updated;
         }));
 
         // Give the connecting spreadsheet its own row for each account, so it has a

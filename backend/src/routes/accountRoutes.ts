@@ -12,6 +12,8 @@ import SpreadsheetAccount from '../models/SpreadsheetAccount.js';
 import UserSpreadsheet from '../models/UserSpreadsheet.js';
 import { verifiedSpreadsheetId, SpreadsheetAccessError } from '../utils/spreadsheetAccess.js';
 import { verifyPlaidWebhook } from '../utils/plaidWebhook.js';
+import { logAccountEvent } from '../utils/accountAudit.js';
+import { sendUserEmail, escapeHtml } from '../utils/mailer.js';
 
 const router = express.Router();
 
@@ -135,6 +137,65 @@ async function flagSpreadsheetsForItem(item_id: string): Promise<number> {
     await Account.updateMany({ item_id } as any, { $set: { is_update: true } });
 
     return result.modifiedCount;
+}
+
+/**
+ * Marks every account on this Item as needing reconnection and emails the owner once.
+ *
+ * Fired by the ITEM webhook (ITEM_LOGIN_REQUIRED or PENDING_EXPIRATION) — see the route
+ * below. Before this, nothing listened for either: a broken or expiring Item just went
+ * quiet, with no record anywhere and no way for the user to know, until someone noticed
+ * the sync had stopped and went looking (see the investigation that led to this).
+ *
+ * The email is throttled to once per break (reconnectNotifiedAt), not once per webhook
+ * delivery — Plaid resends ITEM_LOGIN_REQUIRED on every failed attempt while the Item
+ * stays broken, and PENDING_EXPIRATION more than once as the expiry date nears.
+ */
+async function flagAccountsNeedingReconnect(item_id: string, reason: string): Promise<void> {
+    const accounts = await Account.find({ item_id } as any);
+    if (accounts.length === 0) return;
+
+    const now = new Date();
+    for (const account of accounts) {
+        const alreadyFlagged = account.needsReconnect === true;
+        account.needsReconnect = true;
+        account.needsReconnectReason = reason;
+        account.needsReconnectAt = now;
+        await account.save();
+
+        await logAccountEvent({
+            accountId: String(account._id),
+            userId: account.user_id,
+            event: 'needs_reconnect',
+            reason: `Plaid webhook: ${reason}`,
+            accountIdPlaid: account.account_id,
+            institutionName: account.institution_name,
+        });
+
+        if (alreadyFlagged) continue; // already notified for this break
+
+        const user = account.user_id ? await User.findById(account.user_id).select('email').lean() : null;
+        const email = (user as any)?.email;
+        if (!email) continue;
+
+        account.reconnectNotifiedAt = now;
+        await account.save();
+
+        const institution = account.institution_name || 'your bank';
+        const isExpiring = reason === 'PENDING_EXPIRATION';
+        await sendUserEmail(
+            email,
+            isExpiring
+                ? `TheFinU — ${institution} access is expiring soon`
+                : `TheFinU — ${institution} needs to be reconnected`,
+            `<p>Hi,</p>
+             <p>${isExpiring
+                ? `Your connection to <strong>${escapeHtml(institution)}</strong> will stop working soon unless you reconnect it.`
+                : `Your connection to <strong>${escapeHtml(institution)}</strong> has stopped working and needs to be reconnected.`}</p>
+             <p>Open the TheFinU sidebar in your spreadsheet, go to that account's details, and click <strong>Reconnect Account</strong> — nothing else needs to change, and your data stays exactly where it is.</p>
+             <p>Best,<br>TheFinU</p>`
+        );
+    }
 }
 
 // Get all accounts (admin). These records hold Plaid access tokens for every
@@ -421,7 +482,9 @@ router.post('/store-plaid', gasAuth, async (req, res) => {
                     item_id: plaid_item_id,
                     // Kept with the token: the two only work together.
                     plaidEnv: plaidEnv,
+                    needsReconnect: false,
                 },
+                $unset: { needsReconnectReason: '', needsReconnectAt: '', reconnectNotifiedAt: '' },
                 $setOnInsert: {
                     institution_name: instName,
                     account_type: accType,
@@ -442,7 +505,26 @@ router.post('/store-plaid', gasAuth, async (req, res) => {
                 }
             };
 
-            return Account.findOneAndUpdate(filter, update, { upsert: true, new: true, runValidators: true });
+            // See the AccountAudit model — same logging as the live /exchange proxy
+            // path, kept here too since this legacy route is still reachable by any
+            // add-on install that predates the proxy.
+            const before = await Account.findOne(filter).select('_id item_id').lean();
+            const updated = await Account.findOneAndUpdate(filter, update, { upsert: true, new: true, runValidators: true });
+            if (!before) {
+                await logAccountEvent({
+                    accountId: String(updated._id), userId: user._id, userEmail: user.email,
+                    event: 'created', reason: 'store-plaid (legacy): new institution+mask+name combination',
+                    accountIdPlaid: updated.account_id, institutionName: instName, newItemId: plaid_item_id,
+                });
+            } else if (before.item_id && before.item_id !== plaid_item_id) {
+                await logAccountEvent({
+                    accountId: String(updated._id), userId: user._id, userEmail: user.email,
+                    event: 'relinked', reason: 'store-plaid (legacy): existing account matched, Item replaced',
+                    accountIdPlaid: updated.account_id, institutionName: instName,
+                    previousItemId: before.item_id, newItemId: plaid_item_id,
+                });
+            }
+            return updated;
         }));
 
         console.log('Processed accounts result IDs:', accountsResults.map(r => r?._id));
@@ -496,6 +578,36 @@ router.post('/plaid-webhook', async (req, res) => {
         if (webhook_type === 'HOLDINGS' && webhook_code === 'DEFAULT_UPDATE') {
             const flagged = await flagSpreadsheetsForItem(item_id);
             console.log(`Flagged ${flagged} spreadsheet link(s) for item_id: ${item_id} (holdings)`);
+        }
+
+        // New investment transactions — distinct from HOLDINGS (balances/positions).
+        // Investment accounts never got this signal at all before, which was its own
+        // way of looking exactly like the webhook-coverage gap that started this.
+        if (webhook_type === 'INVESTMENTS_TRANSACTIONS' && webhook_code === 'DEFAULT_UPDATE') {
+            const flagged = await flagSpreadsheetsForItem(item_id);
+            console.log(`Flagged ${flagged} spreadsheet link(s) for item_id: ${item_id} (investment transactions)`);
+        }
+
+        // The Item needs the user to go through Plaid Link again — a bank password
+        // change, new MFA, or Plaid's standard annual re-consent lapsing. This used to
+        // be silently dropped: nothing marked the account, nothing told the user, and
+        // syncing just stopped with no record of why.
+        if (webhook_type === 'ITEM' && webhook_code === 'ERROR' && req.body.error?.error_code === 'ITEM_LOGIN_REQUIRED') {
+            await flagAccountsNeedingReconnect(item_id, 'ITEM_LOGIN_REQUIRED');
+            console.log(`Flagged item_id ${item_id} as needing reconnection (ITEM_LOGIN_REQUIRED)`);
+        }
+        if (webhook_type === 'ITEM' && webhook_code === 'PENDING_EXPIRATION') {
+            await flagAccountsNeedingReconnect(item_id, 'PENDING_EXPIRATION');
+            console.log(`Flagged item_id ${item_id} as needing reconnection (PENDING_EXPIRATION)`);
+        }
+        // The user completed re-auth through Plaid directly (not through our own
+        // update-mode dialog) — clear the flag so the account stops showing as broken.
+        if (webhook_type === 'ITEM' && webhook_code === 'LOGIN_REPAIRED') {
+            await Account.updateMany(
+                { item_id } as any,
+                { $set: { needsReconnect: false }, $unset: { needsReconnectReason: '', needsReconnectAt: '', reconnectNotifiedAt: '' } }
+            );
+            console.log(`Cleared needs-reconnect for item_id ${item_id} (LOGIN_REPAIRED)`);
         }
 
         // Always return 200 to Plaid to acknowledge receipt
@@ -869,6 +981,12 @@ router.delete('/admin/:id', auth, async (req, res) => {
                 }
             }
         }
+
+        await logAccountEvent({
+            accountId: String(account._id), userId: account.user_id, event: 'deleted',
+            reason: 'Admin delete', accountIdPlaid: account.account_id,
+            institutionName: account.institution_name, previousItemId: account.item_id || null,
+        });
 
         await Account.deleteOne({ _id: account._id });
 
