@@ -31,6 +31,7 @@ steps:
       - '--platform=managed'
       - '--allow-unauthenticated'
       - '--port=8080'
+      - '--min-instances=1'
       - '--set-secrets=MONGODB_URI=MONGODB_URI:latest,JWT_SECRET=JWT_SECRET:latest,SMTP_PASS=SMTP_PASS:latest'
       # The leading ^|^ sets "|" as the separator between KEY=VALUE pairs instead of the
       # default comma. GAS_OAUTH_CLIENT_IDS holds a comma-separated LIST, so with the
